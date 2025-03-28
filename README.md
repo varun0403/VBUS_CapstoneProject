@@ -1,6 +1,6 @@
 A smart mobile application for educational institutions to manage its transportation services effeciently without the interference of admin. 
 
-Developed using Jetpack Compose and used utilised Google Map API for navigation and geofencing logic. Firebase is used in backend as of now, might migrate to cloud in upcoming months
+Developed using Jetpack Compose and utilised Google Map API for navigation and geofencing logic. Firebase is used in backend as of now, might migrate to cloud in upcoming months
 
 Core Features:-
 
