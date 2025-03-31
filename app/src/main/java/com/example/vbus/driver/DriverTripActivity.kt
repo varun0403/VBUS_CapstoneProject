@@ -49,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.google.firebase.firestore.FieldValue
 import com.example.vbus.routes
+import com.example.vbus.students
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.ValueEventListener
@@ -291,15 +292,13 @@ fun startLocationUpdates(
                     geofenceCenters.forEachIndexed { index, center ->
                         val isInside = checkGeofence(latLng, center, geofenceRadius)
                         val previousState = previousStateMap[index] ?: false
-
                         if (!previousState && isInside) {
                             Log.d("GeofenceEvent", "Bus entered geofence ${index + 1}.")
                             val timestamp = System.currentTimeMillis()
-
-                            // Update Firestore under bus_no -> date -> s{index + 1}
                             val busRef = db.collection("bus_status").document(bus_no)
-
-                            // First, update the timestamp (ensuring "s${index + 1}" is set)
+                            // Get the first 3 students from this stop
+                            val studentsBoarded = students["${index + 1}"]?.take(3) ?: emptyList()
+                            // Update Firestore under bus_no -> date -> s{index + 1}
                             busRef.set(
                                 mapOf(
                                     date_ to mapOf("s${index + 1}" to timestamp)
@@ -308,8 +307,7 @@ fun startLocationUpdates(
                             ).addOnSuccessListener {
                                 Log.d("Firestore", "Timestamp for geofence ${index + 1} under date $date_ updated.")
                             }
-
-                            // Then, increment the "count" field
+                            // Increment "count" field
                             busRef.update("$date_.count", FieldValue.increment(20))
                                 .addOnSuccessListener {
                                     Log.d("Firestore", "Count incremented by 20 under date $date_.")
@@ -317,10 +315,18 @@ fun startLocationUpdates(
                                 .addOnFailureListener { e ->
                                     Log.e("Firestore", "Error updating count: ", e)
                                 }
-
+                            // Append students_boarded
+                            busRef.update("$date_.students_boarded", FieldValue.arrayUnion(*studentsBoarded.toTypedArray()))
+                                .addOnSuccessListener {
+                                    Log.d("Firestore", "First 3 students from stop ${index + 1} added to students_boarded.")
+                                }
+                                .addOnFailureListener { e ->
+                                    Log.e("Firestore", "Error updating students_boarded: ", e)
+                                }
                         }
                         previousStateMap[index] = isInside
                     }
+
 
                     checkPoints.forEachIndexed { index, point ->
                         val isInside = checkGeofence(latLng, point, geofenceRadius)
