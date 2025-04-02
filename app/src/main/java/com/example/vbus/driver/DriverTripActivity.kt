@@ -64,7 +64,6 @@ fun DriverMapScreen(navController: NavHostController, bus_no: String) {
     val checkPoints = remember { mutableStateListOf<LatLng>() }
     val geofenceRadius = 130.0
     val route_id = remember { mutableStateOf("loading.......") }
-
     var userLocation by remember { mutableStateOf<LatLng?>(null) }
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -87,6 +86,44 @@ fun DriverMapScreen(navController: NavHostController, bus_no: String) {
     }
 
     LaunchedEffect(Unit) {
+        val documentRef = db.collection("buses").document(bus_no)
+        Log.d("Bus no",bus_no)
+        documentRef.get()
+            .addOnSuccessListener { document ->
+                if (document != null) {
+                    Log.d("FirestoreData", "Document fetched: $document")
+                    val stops = document.get("stops") as? Map<*, *>
+                    if (stops != null) {
+                        Log.d("FirestoreData", "Stops found: $stops")
+                        stops.forEach { (key, value) ->
+                            val geoPoint = value as? com.google.firebase.firestore.GeoPoint
+                            if (geoPoint != null) {
+                                geofenceCenters.add(LatLng(geoPoint.latitude, geoPoint.longitude))
+                                Log.d(
+                                    "FirestoreData",
+                                    "Added GeoPoint for key=$key: ${geoPoint.latitude}, ${geoPoint.longitude}"
+                                )
+                            }
+                            else {
+                                Log.d("FirestoreData", "Invalid GeoPoint for key=$key: $value")
+                            }
+                        }
+                        Log.d("FirestoreData", "Final geofence centers: $geofenceCenters")
+                    }
+                    else {
+                        Log.d("FirestoreData", "No 'stops' field found in document.")
+                    }
+                }
+                else {
+                    Log.d("FirestoreData", "Document does not exist")
+                }
+            }
+            .addOnFailureListener { exception ->
+                Log.e("FirestoreData", "Error fetching document", exception)
+            }
+    }
+
+    LaunchedEffect(Unit) {
         if (ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.ACCESS_FINE_LOCATION
@@ -95,7 +132,8 @@ fun DriverMapScreen(navController: NavHostController, bus_no: String) {
             startLocationUpdates(bus_no, fusedLocationClient, context, { location ->
                 userLocation = location
             }, geofenceCenters, checkPoints, geofenceRadius)
-        } else {
+        }
+        else {
             locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         }
     }
@@ -228,6 +266,9 @@ fun startLocationUpdates(
         .addOnSuccessListener { busDetails ->
             val checkpointsMap = busDetails.get("check_points") as? Map<String, Any> ?: emptyMap()
             val checkpointKeys = checkpointsMap.keys.toList()
+            val stops = busDetails.get("stops") as? Map<String, Any> ?: emptyMap()
+            val num_of_stops = stops.size
+            val increment_per_stop = if (num_of_stops == 3) 20 / (num_of_stops + 1) else 20 / num_of_stops
             Log.d("Check Point Keys: ", checkpointKeys.toString())
             val firstCheckpoint = checkpointKeys.firstOrNull() ?: ""
             Log.d("UpcomingCheckpoint", "Next checkpoint assigned: $firstCheckpoint")
@@ -239,7 +280,8 @@ fun startLocationUpdates(
                             "count" to 0,
                             "bus_operable" to true,
                             "upcoming_checkpoint" to firstCheckpoint,
-                            "rescue_request" to false
+                            "rescue_request" to false,
+                            "students_boarded" to emptyList<String>()
                     )), SetOptions.merge())
                     .addOnSuccessListener {
                         Log.d("Firestore", "Date structure for $date_ ensured.")
@@ -296,6 +338,16 @@ fun startLocationUpdates(
                             Log.d("GeofenceEvent", "Bus entered geofence ${index + 1}.")
                             val timestamp = System.currentTimeMillis()
                             val busRef = db.collection("bus_status").document(bus_no)
+                            val busRef2 = db.collection("buses").document(bus_no)
+                            val stops = busRef2.get()
+                                .addOnSuccessListener { doc->
+                                    val stops = doc.get("stops") as? Map<String, Any> ?: emptyMap()
+                                    val num_of_stops = stops.size
+                                    val increment_per_stop = if (num_of_stops == 3) 20 / (num_of_stops + 1) else 20 / num_of_stops
+                                }
+                                .addOnFailureListener{
+                                    val increment_per_stop = 5
+                                }
                             // Get the first 3 students from this stop
                             val studentsBoarded = students["${index + 1}"]?.take(3) ?: emptyList()
                             // Update Firestore under bus_no -> date -> s{index + 1}
@@ -308,7 +360,7 @@ fun startLocationUpdates(
                                 Log.d("Firestore", "Timestamp for geofence ${index + 1} under date $date_ updated.")
                             }
                             // Increment "count" field
-                            busRef.update("$date_.count", FieldValue.increment(20))
+                            busRef.update("$date_.count", FieldValue.increment(21))
                                 .addOnSuccessListener {
                                     Log.d("Firestore", "Count incremented by 20 under date $date_.")
                                 }
@@ -438,9 +490,9 @@ fun alertNearbyBuses(brokenBusNo: String) {
                         .get()
                         .addOnSuccessListener { busData ->
                             val brokenBusData = busData.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
-                            val upcomingCheckpoint = brokenBusData["upcoming_checkpoint"] as? String
-                            Log.d("Upcoming Checkpoint", upcomingCheckpoint.toString())
-
+                            val upcomingCheckpointBrokenBus = brokenBusData["upcoming_checkpoint"] as? String
+                            Log.d("Upcoming Checkpoint", upcomingCheckpointBrokenBus.toString())
+                            var total_seats_available = 0
                             for (activeBusNo in activeBusesInRoute) {
                                 if (activeBusNo == brokenBusNo) continue // Skip itself
 
@@ -449,12 +501,16 @@ fun alertNearbyBuses(brokenBusNo: String) {
                                     .get()
                                     .addOnSuccessListener { thisBus ->
                                         val thisBusData = thisBus.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
+                                        val available_seats = 20 - (thisBusData["count"] as? Long ?: 0).toInt()
+                                        total_seats_available += available_seats
                                         val checkPointsMap = thisBusData["check_points"] as? Map<String, Any> ?: emptyMap()
                                         val checkPointNames = checkPointsMap.keys.toList()
-
-                                        if (!checkPointNames.contains(upcomingCheckpoint)) {
+                                        val upcomingCheckpointActiveBus = thisBusData["upcoming_checkpoint"] as? String
+                                        val upcomingCheckpointActiveBusNum = upcomingCheckpointActiveBus?.substring(1)?.toIntOrNull() ?: return@addOnSuccessListener
+                                        val upcomingCheckpointBrokenBusNum = upcomingCheckpointBrokenBus?.substring(1)?.toIntOrNull() ?: return@addOnSuccessListener
+                                        if (upcomingCheckpointActiveBusNum <= upcomingCheckpointBrokenBusNum) {
                                             Log.d("Alert",
-                                                "Notify bus $activeBusNo about the broken bus $brokenBusNo")
+                                                "Notify bus $activeBusNo about the broken bus $brokenBusNo. Available seats $available_seats")
 
                                             // Step 5: Mark active bus for rescue
                                             db.collection("bus_status").document(activeBusNo)
@@ -471,6 +527,7 @@ fun alertNearbyBuses(brokenBusNo: String) {
                                                     SetOptions.merge()
                                                 )
                                         }
+                                        Log.d("Total Seats Available", total_seats_available.toString())
                                     }
                             }
                         }

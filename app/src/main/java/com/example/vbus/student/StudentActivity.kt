@@ -86,7 +86,7 @@ fun StudentHomeScreen(navController: NavController, email: String) {
             MenuItem("Announcements", Icons.Default.AccountBox) { navController.navigate("student_announcement") },
             MenuItem("Complaints", Icons.Default.AccountBox) { navController.navigate("complaint_screen/$email") },
             MenuItem("Download Letter", Icons.Default.AccountBox) { navController.navigate("letter_generation/$email") },
-            MenuItem("Track My Bus", Icons.Default.AccountBox) { navController.navigate("track_bus/$busNo") },
+            MenuItem("Track My Bus", Icons.Default.AccountBox) { navController.navigate("track_bus/$busNo/$email") },
             MenuItem("Where is My Bus?", Icons.Default.AccountBox) { navController.navigate("map_test_screen/$busNo") },
             MenuItem("Logout", Icons.Default.AccountBox) {
                 auth.signOut()

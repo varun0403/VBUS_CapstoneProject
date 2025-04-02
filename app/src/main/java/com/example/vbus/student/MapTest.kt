@@ -17,15 +17,6 @@ import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.rememberCameraPositionState
 
-//class MapsTest : ComponentActivity() {
-//    override fun onCreate(savedInstanceState: Bundle?) {
-//        super.onCreate(savedInstanceState)
-//        setContent {
-//            MapTestScreen()
-//        }
-//    }
-//}
-
 @Composable
 fun MapTestScreen(bus_no: String) {
     val db = Firebase.firestore
@@ -60,7 +51,8 @@ fun MapTestScreen(bus_no: String) {
                     } else {
                         Log.d("FirestoreData", "No 'stops' field found in document.")
                     }
-                } else {
+                }
+                else {
                     Log.d("FirestoreData", "Document does not exist")
                 }
             }

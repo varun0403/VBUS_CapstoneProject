@@ -138,12 +138,13 @@ class MainActivity : ComponentActivity() {
                         composable("notification_test") {
                             NotificationTestScreen()
                         }
-                        composable("track_bus/{bus_no}",
+                        composable("track_bus/{bus_no}/{email}",
                             arguments = listOf(navArgument("bus_no") { type = NavType.StringType })
                         ) {
                             backStackEntry ->
                             val bus_no = backStackEntry.arguments?.getString("bus_no").orEmpty()
-                            MyMapScreen(bus_no)
+                            val email = backStackEntry.arguments?.getString("email").orEmpty()
+                            MyMapScreen(bus_no,email)
                         }
                         composable(
                             "driver_home/{driver_email}",
