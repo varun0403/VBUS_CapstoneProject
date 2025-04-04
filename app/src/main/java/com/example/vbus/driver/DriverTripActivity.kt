@@ -4,32 +4,20 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import android.os.Bundle
 import android.os.Looper
 import android.util.Log
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.ActivityCompat
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavHostController
 import com.google.android.gms.location.*
@@ -44,15 +32,12 @@ import com.google.firebase.ktx.Firebase
 import kotlin.math.*
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import androidx.compose.ui.platform.LocalContext //import for notification
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.google.firebase.firestore.FieldValue
 import com.example.vbus.routes
-import com.example.vbus.students
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.ValueEventListener
+import com.example.vbus.studentBoardingStatus
+import com.google.android.gms.tasks.Tasks
+import com.google.firebase.database.*
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
@@ -273,16 +258,14 @@ fun startLocationUpdates(
             val firstCheckpoint = checkpointKeys.firstOrNull() ?: ""
             Log.d("UpcomingCheckpoint", "Next checkpoint assigned: $firstCheckpoint")
             if (!busDetails.contains(date_)) {
-                db.collection("bus_status")
-                    .document(bus_no)
-                    .set(mapOf(
+                db.collection("bus_status").document(bus_no).set(mapOf(
                         date_ to mapOf(
                             "count" to 0,
                             "bus_operable" to true,
                             "upcoming_checkpoint" to firstCheckpoint,
                             "rescue_request" to false,
-                            "students_boarded" to emptyList<String>()
-                    )), SetOptions.merge())
+                            "boarding_status" to studentBoardingStatus[bus_no])),
+                    SetOptions.merge())
                     .addOnSuccessListener {
                         Log.d("Firestore", "Date structure for $date_ ensured.")
                     }
@@ -295,11 +278,8 @@ fun startLocationUpdates(
             Log.e("Firestore", "Failed to fetch document for $bus_no.", it)
         }
 
-    if (ActivityCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-    ) {
+    if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+        == PackageManager.PERMISSION_GRANTED) {
         val locationRequest = LocationRequest.create().apply {
             interval = 5000 // 5 seconds
             fastestInterval = 5000 // 5 seconds
@@ -338,47 +318,17 @@ fun startLocationUpdates(
                             Log.d("GeofenceEvent", "Bus entered geofence ${index + 1}.")
                             val timestamp = System.currentTimeMillis()
                             val busRef = db.collection("bus_status").document(bus_no)
-                            val busRef2 = db.collection("buses").document(bus_no)
-                            val stops = busRef2.get()
-                                .addOnSuccessListener { doc->
-                                    val stops = doc.get("stops") as? Map<String, Any> ?: emptyMap()
-                                    val num_of_stops = stops.size
-                                    val increment_per_stop = if (num_of_stops == 3) 20 / (num_of_stops + 1) else 20 / num_of_stops
-                                }
-                                .addOnFailureListener{
-                                    val increment_per_stop = 5
-                                }
-                            // Get the first 3 students from this stop
-                            val studentsBoarded = students["${index + 1}"]?.take(3) ?: emptyList()
-                            // Update Firestore under bus_no -> date -> s{index + 1}
                             busRef.set(
                                 mapOf(
                                     date_ to mapOf("s${index + 1}" to timestamp)
                                 ),
                                 SetOptions.merge() // Ensures existing fields remain
                             ).addOnSuccessListener {
-                                Log.d("Firestore", "Timestamp for geofence ${index + 1} under date $date_ updated.")
+                                Log.d("Firestore", "Timestamp for geofence ${index + 1} for date $date_ updated.")
                             }
-                            // Increment "count" field
-                            busRef.update("$date_.count", FieldValue.increment(21))
-                                .addOnSuccessListener {
-                                    Log.d("Firestore", "Count incremented by 20 under date $date_.")
-                                }
-                                .addOnFailureListener { e ->
-                                    Log.e("Firestore", "Error updating count: ", e)
-                                }
-                            // Append students_boarded
-                            busRef.update("$date_.students_boarded", FieldValue.arrayUnion(*studentsBoarded.toTypedArray()))
-                                .addOnSuccessListener {
-                                    Log.d("Firestore", "First 3 students from stop ${index + 1} added to students_boarded.")
-                                }
-                                .addOnFailureListener { e ->
-                                    Log.e("Firestore", "Error updating students_boarded: ", e)
-                                }
                         }
                         previousStateMap[index] = isInside
                     }
-
 
                     checkPoints.forEachIndexed { index, point ->
                         val isInside = checkGeofence(latLng, point, geofenceRadius)
@@ -400,7 +350,8 @@ fun startLocationUpdates(
                                     // ✅ Update upcoming checkpoint
                                     val nextCheckpointValue = if (index + 1 < checkPoints.size) {
                                         "c${index + 2}" // Next checkpoint
-                                    } else {
+                                    }
+                                    else {
                                         "End of Route" // No further checkpoints
                                     }
                                     existingData["upcoming_checkpoint"] = nextCheckpointValue
@@ -492,7 +443,9 @@ fun alertNearbyBuses(brokenBusNo: String) {
                             val brokenBusData = busData.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
                             val upcomingCheckpointBrokenBus = brokenBusData["upcoming_checkpoint"] as? String
                             Log.d("Upcoming Checkpoint", upcomingCheckpointBrokenBus.toString())
-                            var total_seats_available = 0
+
+                            val validBusesForRescue = mutableListOf<String>()
+
                             for (activeBusNo in activeBusesInRoute) {
                                 if (activeBusNo == brokenBusNo) continue // Skip itself
 
@@ -502,17 +455,16 @@ fun alertNearbyBuses(brokenBusNo: String) {
                                     .addOnSuccessListener { thisBus ->
                                         val thisBusData = thisBus.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
                                         val available_seats = 20 - (thisBusData["count"] as? Long ?: 0).toInt()
-                                        total_seats_available += available_seats
-                                        val checkPointsMap = thisBusData["check_points"] as? Map<String, Any> ?: emptyMap()
-                                        val checkPointNames = checkPointsMap.keys.toList()
                                         val upcomingCheckpointActiveBus = thisBusData["upcoming_checkpoint"] as? String
                                         val upcomingCheckpointActiveBusNum = upcomingCheckpointActiveBus?.substring(1)?.toIntOrNull() ?: return@addOnSuccessListener
                                         val upcomingCheckpointBrokenBusNum = upcomingCheckpointBrokenBus?.substring(1)?.toIntOrNull() ?: return@addOnSuccessListener
-                                        if (upcomingCheckpointActiveBusNum <= upcomingCheckpointBrokenBusNum) {
-                                            Log.d("Alert",
-                                                "Notify bus $activeBusNo about the broken bus $brokenBusNo. Available seats $available_seats")
 
-                                            // Step 5: Mark active bus for rescue
+                                        if (upcomingCheckpointActiveBusNum <= upcomingCheckpointBrokenBusNum) {
+                                            Log.d("Alert", "Notify bus $activeBusNo about the broken bus $brokenBusNo. Available seats $available_seats")
+
+                                            validBusesForRescue.add(activeBusNo)
+
+                                            // Step 5.2: Mark active bus for rescue
                                             db.collection("bus_status").document(activeBusNo)
                                                 .set(
                                                     mapOf(
@@ -527,8 +479,12 @@ fun alertNearbyBuses(brokenBusNo: String) {
                                                     SetOptions.merge()
                                                 )
                                         }
-                                        Log.d("Total Seats Available", total_seats_available.toString())
                                     }
+                            }
+
+                            // 🚀 **Fetch students AFTER processing all buses**
+                            fetchBoardedStudents(brokenBusNo, date_) { boardedStudents ->
+                                allocateStudentsToBuses(boardedStudents, validBusesForRescue, date_, brokenBusNo)
                             }
                         }
                 }
@@ -538,4 +494,89 @@ fun alertNearbyBuses(brokenBusNo: String) {
             Log.e("Firebase", "Failed to read data", error.toException())
         }
     })
+}
+
+
+fun fetchBoardedStudents(brokenBusNo: String, date_: String, callback: (List<String>) -> Unit) {
+    val db = Firebase.firestore
+    db.collection("bus_status").document(brokenBusNo)
+        .get()
+        .addOnSuccessListener { busData ->
+            val brokenBusData = busData.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
+            val studentsMap = brokenBusData["boarding_status"] as? Map<String, Long> ?: return@addOnSuccessListener
+
+            val boardedStudents = studentsMap.filterValues { it == 1L }.keys.toList()
+            callback(boardedStudents) // Pass the boarded students list to next step
+        }
+        .addOnFailureListener {
+            Log.e("Firestore", "Failed to fetch boarded students", it)
+        }
+}
+
+fun allocateStudentsToBuses(
+    boardedStudents: List<String>,
+    activeBuses: List<String>,
+    date_: String,
+    brokenBusNo: String
+) {
+    val db = Firebase.firestore
+    val allocatedBuses = mutableMapOf<String, String>()
+    val seatAvailability = mutableMapOf<String, Int>()
+
+    // Fetch seat availability for each active bus
+    val tasks = activeBuses.map { busNo ->
+        db.collection("bus_status").document(busNo)
+            .get()
+            .continueWith { task ->
+                val busData = task.result?.get(date_) as? Map<*, *> ?: return@continueWith
+                val availableSeats = 20 - (busData["count"] as? Long ?: 0).toInt()
+                seatAvailability[busNo] = availableSeats
+            }
+    }
+
+    Tasks.whenAllComplete(tasks).addOnSuccessListener {
+        var studentIndex = 0
+        for ((busNo, seats) in seatAvailability) {
+            for (i in 0 until seats) {
+                if (studentIndex >= boardedStudents.size) break
+                allocatedBuses[boardedStudents[studentIndex]] = busNo
+                studentIndex++
+            }
+        }
+
+        // Fetch the bus status document for the broken bus
+        db.collection("bus_status").document(brokenBusNo)
+            .get()
+            .addOnSuccessListener { thisBus ->
+                val thisBusData = thisBus.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
+
+                // Create a nested structure to update only the required fields
+                val updateData = mapOf(
+                    date_ to mapOf(
+                        "allocated_buses" to allocatedBuses
+                    )
+                )
+
+                // Merge into existing data without overwriting the whole document
+                db.collection("bus_status").document(brokenBusNo)
+                    .set(updateData, SetOptions.merge())
+                    .addOnSuccessListener {
+                        Log.d("Firestore", "Successfully updated allocated_buses for $brokenBusNo under $date_")
+                    }
+                    .addOnFailureListener {
+                        Log.e("Firestore", "Failed to update allocated_buses for $brokenBusNo under $date_", it)
+                    }
+            }
+
+
+        // Store allocated buses in Firestore
+//        db.collection("bus_status").document("allocations_$date_")
+//            .set(mapOf("allocated_buses" to allocatedBuses), SetOptions.merge())
+//            .addOnSuccessListener {
+//                Log.d("Firestore", "Student allocations updated successfully")
+//            }
+//            .addOnFailureListener {
+//                Log.e("Firestore", "Failed to update student allocations", it)
+//            }
+    }
 }
