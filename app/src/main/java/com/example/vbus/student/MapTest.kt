@@ -20,12 +20,9 @@ import com.google.maps.android.compose.rememberCameraPositionState
 @Composable
 fun MapTestScreen(bus_no: String) {
     val db = Firebase.firestore
-
-    // MutableState to hold geofence centers
     val geofenceCenters = remember { mutableStateListOf<LatLng>() }
     val geofenceRadius = 130.0
     Log.d("Bus no",bus_no)
-    // Fetch data from Firestore
     LaunchedEffect(Unit) {
         val documentRef = db.collection("buses").document(bus_no)
         documentRef.get()

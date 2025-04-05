@@ -1,7 +1,13 @@
 package com.example.vbus.admin
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -9,12 +15,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
-import java.util.Locale
+import java.util.*
 
 @Composable
 fun AdminAnnouncementScreen() {
@@ -61,11 +68,13 @@ fun AdminAnnouncementScreen() {
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(announcements.size) { index ->
-                        val (id, announcement) = announcements[index]
+                    itemsIndexed(announcements) { index, item ->
+                        val (id, announcement) = item
                         AnnouncementCard(
                             text = announcement["text"] as? String ?: "No content",
                             timestamp = announcement["timestamp"] as? Long ?: 0L,
+                            fileUrl = announcement["fileUrl"] as? String,
+                            context = LocalContext.current,
                             onDelete = {
                                 deleteAnnouncement(db, id) { success ->
                                     if (success) {
@@ -85,11 +94,11 @@ fun AdminAnnouncementScreen() {
     if (showDialog) {
         AnnouncementDialog(
             onDismiss = { showDialog = false },
-            onPost = { text ->
-                postAnnouncement(db, text) { result ->
+            onPost = { text, uri ->
+                postAnnouncementWithFile(db, text, uri) { result, newAnnouncement ->
                     if (result == "Announcement posted") {
                         showDialog = false
-                        announcements = announcements + ("" to mapOf("text" to text, "timestamp" to System.currentTimeMillis()))
+                        announcements = announcements + ("" to newAnnouncement)
                     }
                 }
             }
@@ -98,21 +107,35 @@ fun AdminAnnouncementScreen() {
 }
 
 @Composable
-fun AnnouncementDialog(onDismiss: () -> Unit, onPost: (String) -> Unit) {
+fun AnnouncementDialog(
+    onDismiss: () -> Unit,
+    onPost: (String, Uri?) -> Unit
+) {
     var text by remember { mutableStateOf("") }
+    var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        selectedFileUri = uri
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Post Announcement") },
         text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text("Announcement") },
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("Announcement") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(onClick = { launcher.launch("*/*") }) {
+                    Text(if (selectedFileUri != null) "File Selected" else "Attach File")
+                }
+            }
         },
         confirmButton = {
-            TextButton(onClick = { if (text.isNotEmpty()) onPost(text) }) {
+            TextButton(onClick = { if (text.isNotEmpty()) onPost(text, selectedFileUri) }) {
                 Text("Post")
             }
         },
@@ -125,10 +148,18 @@ fun AnnouncementDialog(onDismiss: () -> Unit, onPost: (String) -> Unit) {
 }
 
 @Composable
-fun AnnouncementCard(text: String, timestamp: Long, onDelete: () -> Unit) {
+fun AnnouncementCard(
+    text: String,
+    timestamp: Long,
+    fileUrl: String?,
+    context: Context,
+    onDelete: () -> Unit
+) {
     var showDialog by remember { mutableStateOf(false) }
     Card(
-        modifier = Modifier.fillMaxWidth().padding(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -146,6 +177,15 @@ fun AnnouncementCard(text: String, timestamp: Long, onDelete: () -> Unit) {
                         contentDescription = "Delete Announcement",
                         tint = MaterialTheme.colorScheme.error
                     )
+                }
+            }
+            fileUrl?.let {
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(fileUrl))
+                    context.startActivity(intent)
+                }) {
+                    Text("Open Attachment")
                 }
             }
         }
@@ -172,11 +212,37 @@ fun AnnouncementCard(text: String, timestamp: Long, onDelete: () -> Unit) {
     }
 }
 
-fun postAnnouncement(db: FirebaseFirestore, text: String, onComplete: (String) -> Unit) {
-    val announcement = mapOf("text" to text, "timestamp" to System.currentTimeMillis())
-    db.collection("announcements").add(announcement)
-        .addOnSuccessListener { onComplete("Announcement posted") }
-        .addOnFailureListener { onComplete("Failed to post announcement") }
+fun postAnnouncementWithFile(
+    db: FirebaseFirestore,
+    text: String,
+    fileUri: Uri?,
+    onComplete: (String, Map<String, Any>) -> Unit
+) {
+    val timestamp = System.currentTimeMillis()
+    if (fileUri == null) {
+        val announcement = mapOf("text" to text, "timestamp" to timestamp)
+        db.collection("announcements").add(announcement)
+            .addOnSuccessListener { onComplete("Announcement posted", announcement) }
+            .addOnFailureListener { onComplete("Failed to post announcement", emptyMap()) }
+    } else {
+        val storageRef = FirebaseStorage.getInstance().reference
+            .child("announcements/${UUID.randomUUID()}")
+        storageRef.putFile(fileUri)
+            .continueWithTask { task ->
+                if (!task.isSuccessful) throw task.exception!!
+                storageRef.downloadUrl
+            }.addOnSuccessListener { uri ->
+                val announcement = mapOf(
+                    "text" to text,
+                    "timestamp" to timestamp,
+                    "fileUrl" to uri.toString()
+                )
+                db.collection("announcements").add(announcement)
+                    .addOnSuccessListener { onComplete("Announcement posted", announcement) }
+            }.addOnFailureListener {
+                onComplete("Failed to post announcement", emptyMap())
+            }
+    }
 }
 
 fun deleteAnnouncement(db: FirebaseFirestore, id: String, onComplete: (Boolean) -> Unit) {

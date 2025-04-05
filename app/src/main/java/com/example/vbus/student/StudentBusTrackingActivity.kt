@@ -42,6 +42,7 @@ fun MyMapScreen(bus_no: String, email: String) {
     var driverLocation by remember { mutableStateOf<LatLng?>(null) }
     var busStatus by remember { mutableStateOf("Fetching status...") }
     var hasBoarded by remember { mutableStateOf(false) }
+    var rescue_bus by remember { mutableStateOf("") }
 
     // Fetch driver location from Realtime Database
     LaunchedEffect(Unit) {
@@ -71,6 +72,11 @@ fun MyMapScreen(bus_no: String, email: String) {
         HasBoarded(bus_no, email) { isBoarded ->
             hasBoarded = isBoarded
         }
+
+        rescue_bus_no(bus_no, email) { allottedBus ->
+            rescue_bus = allottedBus // this will be "0" or a bus number like "BUS_102"
+        }
+
     }
 
     Column(
@@ -96,6 +102,7 @@ fun MyMapScreen(bus_no: String, email: String) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(text = "Bus Operable: $busOperable")
                 Text(text = "Rescue Request: $rescueReq")
+                Text(text = "Rescue bus no: $rescue_bus")
                 Text(text = if (hasBoarded) "You have boarded the bus" else "You are waiting for the bus")
             }
         }
@@ -111,8 +118,8 @@ fun HasBoarded(bus_no: String, email: String, callback: (Boolean) -> Unit) {
     docRef.get()
         .addOnSuccessListener { document ->
             val date_ = getCurrentDate()
-            val boardedStudents = document.get("$date_.students_boarded") as? List<String> ?: emptyList()
-            callback(email in boardedStudents) // Return true if found, else false
+            val boardedStudents = document.get("$date_.allocated_buses") as? Map<*, *> ?: emptyMap<Any, Any>()
+            callback(email in boardedStudents.keys.toList()) // Return true if found, else false
         }
         .addOnFailureListener { e ->
             Log.e("Firestore", "Error fetching data", e)
@@ -120,7 +127,32 @@ fun HasBoarded(bus_no: String, email: String, callback: (Boolean) -> Unit) {
         }
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
+fun rescue_bus_no(bus_no: String, email: String, callback: (String) -> Unit) {
+    val db = Firebase.firestore
+    val docRef = db.collection("bus_status").document(bus_no)
+    val date_ = getCurrentDate()
 
+    docRef.get()
+        .addOnSuccessListener { document ->
+            // Check if bus is operable
+            val busOperable = document.getBoolean("$date_.bus_operable") ?: true
+            if (busOperable) {
+                // Bus is fine, show 0
+                callback("0")
+                return@addOnSuccessListener
+            }
+
+            // Now check allocated buses
+            val allocatedBuses = document.get("$date_.allocated_buses") as? Map<*, *> ?: emptyMap<Any, Any>()
+            val allottedBus = allocatedBuses[email] as? String ?: "0"
+            callback(allottedBus)
+        }
+        .addOnFailureListener {
+            // Firestore fetch failed, just return 0
+            callback("0")
+        }
+}
 
 
 @Composable

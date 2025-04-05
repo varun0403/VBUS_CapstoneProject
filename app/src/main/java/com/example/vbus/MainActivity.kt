@@ -50,6 +50,7 @@ import com.example.vbus.authenication.PasswordChangeScreen
 import com.example.vbus.authenication.SignUpScreen
 import com.example.vbus.driver.DriverHomeScreen
 import com.example.vbus.driver.DriverMapScreen
+import com.example.vbus.driver.DriverRescueUi
 import com.example.vbus.student.*
 import com.example.vbus.ui.theme.VBUSTheme
 import com.example.vbus.student.CustomCard
@@ -145,6 +146,13 @@ class MainActivity : ComponentActivity() {
                             val bus_no = backStackEntry.arguments?.getString("bus_no").orEmpty()
                             val email = backStackEntry.arguments?.getString("email").orEmpty()
                             MyMapScreen(bus_no,email)
+                        }
+                        composable("driver_rescue_map/{bus_no}",
+                            arguments = listOf(navArgument("bus_no") { type = NavType.StringType })
+                        ) {
+                            backStackEntry ->
+                            val bus_no = backStackEntry.arguments?.getString("bus_no").orEmpty()
+                            DriverRescueUi(bus_no)
                         }
                         composable(
                             "driver_home/{driver_email}",

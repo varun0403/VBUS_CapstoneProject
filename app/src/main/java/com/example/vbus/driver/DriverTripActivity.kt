@@ -34,10 +34,13 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import com.example.vbus.MyFirebaseMessagingService
 import com.example.vbus.routes
 import com.example.vbus.studentBoardingStatus
 import com.google.android.gms.tasks.Tasks
 import com.google.firebase.database.*
+import com.google.firebase.firestore.GeoPoint
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
@@ -152,21 +155,17 @@ fun DriverMapScreen(navController: NavHostController, bus_no: String) {
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold
                 )
-                Button(
-                    onClick = { alertNearbyBuses(bus_no) }
-                ) { Text("Report Breakdown") }
+                Row {
+                    Button(
+                        onClick = { alertNearbyBuses(bus_no) }
+                    ) { Text("Report Breakdown") }
 
-                var isRescueRequested by remember { mutableStateOf(false) }
-                LaunchedEffect(bus_no) {
-                    val docRef = db.collection("bus_status").document(bus_no)
-                    docRef.get().addOnSuccessListener { document ->
-                        isRescueRequested = document.getBoolean("rescue_request") ?: false
-                    }
+                    Button(
+                        onClick = {
+                            navController.navigate("driver_rescue_map/$bus_no")
+                        },
+                    ) { Text("Navigate to broken bus") }
                 }
-                Button(
-                    onClick = {},
-                    enabled = isRescueRequested
-                ) { Text("Navigate to broken bus") }
             }
         }
     }
@@ -252,8 +251,6 @@ fun startLocationUpdates(
             val checkpointsMap = busDetails.get("check_points") as? Map<String, Any> ?: emptyMap()
             val checkpointKeys = checkpointsMap.keys.toList()
             val stops = busDetails.get("stops") as? Map<String, Any> ?: emptyMap()
-            val num_of_stops = stops.size
-            val increment_per_stop = if (num_of_stops == 3) 20 / (num_of_stops + 1) else 20 / num_of_stops
             Log.d("Check Point Keys: ", checkpointKeys.toString())
             val firstCheckpoint = checkpointKeys.firstOrNull() ?: ""
             Log.d("UpcomingCheckpoint", "Next checkpoint assigned: $firstCheckpoint")
@@ -470,10 +467,7 @@ fun alertNearbyBuses(brokenBusNo: String) {
                                                     mapOf(
                                                         date_ to mapOf(
                                                             "rescue_request" to true,
-                                                            "rescue_location" to mapOf(
-                                                                "latitude" to latitude,
-                                                                "longitude" to longitude
-                                                            )
+                                                            "rescue_location" to GeoPoint(latitude, longitude)
                                                         )
                                                     ),
                                                     SetOptions.merge()

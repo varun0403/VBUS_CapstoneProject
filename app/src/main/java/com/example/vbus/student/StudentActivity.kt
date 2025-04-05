@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.ui.platform.LocalContext
 import com.example.vbus.R
+import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -42,6 +43,7 @@ fun StudentHomeScreen(navController: NavController, email: String) {
     var regNo by remember { mutableStateOf("Fetching reg no...") }
     var backPressedOnce by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
 
     BackHandler {
         if (backPressedOnce) {
@@ -64,6 +66,10 @@ fun StudentHomeScreen(navController: NavController, email: String) {
             busNo = document.getString("bus_no").orEmpty()
             regNo = document.getString("reg_no").orEmpty()
         }
+    }
+
+    LaunchedEffect(Unit) {
+        FirebaseMessaging.getInstance().subscribeToTopic(busNo)
     }
 
     Column(
