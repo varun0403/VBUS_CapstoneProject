@@ -3,6 +3,7 @@ package com.example.vbus.student
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
@@ -50,10 +51,20 @@ fun StudentHomeScreen(navController: NavController, email: String) {
     var driver_name by remember { mutableStateOf("Driver") }
     var driver_mobile by remember { mutableStateOf("9999999999") }
 
-    LaunchedEffect(Unit) {
-        saveFcmTokenToFirestore(email)
-    }
+//    LaunchedEffect(Unit) {
+//        saveFcmTokenToFirestore(email)
+//    }
 
+    LaunchedEffect(Unit) {
+        FirebaseMessaging.getInstance().subscribeToTopic("listenAnnouncements")
+            .addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    Log.d("FCM", "Subscribed to listenAnnouncements")
+                } else {
+                    Log.e("FCM", "Subscription failed", task.exception)
+                }
+            }
+    }
 
     BackHandler {
         if (backPressedOnce) {

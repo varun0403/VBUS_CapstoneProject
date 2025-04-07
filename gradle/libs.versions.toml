@@ -11,6 +11,7 @@ faceDetection = "16.1.7"
 faceDetectionVersion = "16.1.5"
 firebaseBom = "33.6.0"
 firebaseFirestoreKtx = "25.1.1"
+firebaseMessaging = "24.1.1"
 firebaseMlVision = "24.1.0"
 googleServices = "4.4.2"
 gson = "2.10.1"
@@ -64,6 +65,7 @@ androidx-material = { module = "androidx.compose.material:material", version.ref
 androidx-navigation-compose-v284 = { module = "androidx.navigation:navigation-compose", version.ref = "navigationComposeVersion" }
 androidx-ui-v150 = { module = "androidx.compose.ui:ui", version.ref = "uiVersion" }
 annotations = { module = "org.jetbrains:annotations", version.ref = "annotations" }
+com-google-firebase-firebase-messaging = { module = "com.google.firebase:firebase-messaging", version.ref = "firebaseMessaging" }
 face-detection = { module = "com.google.mlkit:face-detection", version.ref = "faceDetection" }
 face-detection-v1615 = { module = "com.google.mlkit:face-detection", version.ref = "faceDetectionVersion" }
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
