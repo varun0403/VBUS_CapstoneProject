@@ -158,6 +158,7 @@ fun processImage(
                 val croppedFace = cropFace(bitmap, face.boundingBox)
 
                 if (croppedFace != null) {
+                    val resizedFace = Bitmap.createScaledBitmap(croppedFace, 160, 160, true)
                     val mappedBox = mapBoundingBox(
                         face.boundingBox,
                         imageProxy.width.toFloat(),
@@ -167,7 +168,7 @@ fun processImage(
 
                     if (mappedBox != null) {
                         // Call the recognizeFace function here
-                        val recognizedName = recognizeFace(context, croppedFace, face.boundingBox)
+                        val recognizedName = recognizeFace(context, resizedFace, face.boundingBox)
                         Log.d("Name of the person",recognizedName)
 
                         onFaceRecognized(croppedFace, mappedBox, recognizedName)

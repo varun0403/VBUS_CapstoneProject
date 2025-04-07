@@ -174,7 +174,7 @@ fun DriverMapScreen(navController: NavHostController, bus_no: String) {
 
 @Composable
 fun LoadingScreen() {
-
+    CircularProgressIndicator()
 }
 
 @Composable
@@ -311,21 +311,38 @@ fun startLocationUpdates(
                     geofenceCenters.forEachIndexed { index, center ->
                         val isInside = checkGeofence(latLng, center, geofenceRadius)
                         val previousState = previousStateMap[index] ?: false
+
                         if (!previousState && isInside) {
                             Log.d("GeofenceEvent", "Bus entered geofence ${index + 1}.")
                             val timestamp = System.currentTimeMillis()
                             val busRef = db.collection("bus_status").document(bus_no)
-                            busRef.set(
-                                mapOf(
-                                    date_ to mapOf("s${index + 1}" to timestamp)
-                                ),
-                                SetOptions.merge() // Ensures existing fields remain
-                            ).addOnSuccessListener {
-                                Log.d("Firestore", "Timestamp for geofence ${index + 1} for date $date_ updated.")
+
+                            busRef.get().addOnSuccessListener { document ->
+                                val existingData = document.get(date_) as? MutableMap<String, Any> ?: mutableMapOf()
+                                val timestamps = (existingData["timestamp"] as? MutableMap<String, Long>) ?: mutableMapOf()
+
+                                // Save current stop timestamp
+                                timestamps["s${index + 1}"] = timestamp
+                                existingData["timestamp"] = timestamps
+
+                                // ✅ Set upcoming stop
+                                val nextStopValue = if (index + 1 < geofenceCenters.size) {
+                                    "s${index + 2}"
+                                } else {
+                                    "VIT"
+                                }
+                                existingData["upcoming_stop"] = nextStopValue
+
+                                busRef.set(mapOf(date_ to existingData), SetOptions.merge())
+                                    .addOnSuccessListener {
+                                        Log.d("Firestore", "Stop ${index + 1} timestamp and upcoming_stop updated for date $date_.")
+                                    }
                             }
                         }
+
                         previousStateMap[index] = isInside
                     }
+
 
                     checkPoints.forEachIndexed { index, point ->
                         val isInside = checkGeofence(latLng, point, geofenceRadius)
@@ -467,7 +484,8 @@ fun alertNearbyBuses(brokenBusNo: String) {
                                                     mapOf(
                                                         date_ to mapOf(
                                                             "rescue_request" to true,
-                                                            "rescue_location" to GeoPoint(latitude, longitude)
+                                                            "rescue_location" to GeoPoint(latitude, longitude),
+                                                            "rescue_bus" to brokenBusNo
                                                         )
                                                     ),
                                                     SetOptions.merge()
@@ -532,10 +550,17 @@ fun allocateStudentsToBuses(
         var studentIndex = 0
         for ((busNo, seats) in seatAvailability) {
             for (i in 0 until seats) {
-                if (studentIndex >= boardedStudents.size) break
+                if (studentIndex >= boardedStudents.size) {
+                    break
+                }
                 allocatedBuses[boardedStudents[studentIndex]] = busNo
                 studentIndex++
             }
+        }
+
+        while (studentIndex < boardedStudents.size) {
+            allocatedBuses[boardedStudents[studentIndex]] = "NA"
+            studentIndex++
         }
 
         // Fetch the bus status document for the broken bus
@@ -561,16 +586,5 @@ fun allocateStudentsToBuses(
                         Log.e("Firestore", "Failed to update allocated_buses for $brokenBusNo under $date_", it)
                     }
             }
-
-
-        // Store allocated buses in Firestore
-//        db.collection("bus_status").document("allocations_$date_")
-//            .set(mapOf("allocated_buses" to allocatedBuses), SetOptions.merge())
-//            .addOnSuccessListener {
-//                Log.d("Firestore", "Student allocations updated successfully")
-//            }
-//            .addOnFailureListener {
-//                Log.e("Firestore", "Failed to update student allocations", it)
-//            }
     }
 }

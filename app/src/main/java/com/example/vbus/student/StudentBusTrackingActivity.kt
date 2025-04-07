@@ -8,12 +8,15 @@ import androidx.activity.compose.setContent
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.vbus.R
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -43,6 +46,7 @@ fun MyMapScreen(bus_no: String, email: String) {
     var busStatus by remember { mutableStateOf("Fetching status...") }
     var hasBoarded by remember { mutableStateOf(false) }
     var rescue_bus by remember { mutableStateOf("") }
+    var upcoming_stop by remember { mutableStateOf("loading") }
 
     // Fetch driver location from Realtime Database
     LaunchedEffect(Unit) {
@@ -67,6 +71,7 @@ fun MyMapScreen(bus_no: String, email: String) {
                 val busDetails = document.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
                 busOperable = busDetails["bus_operable"] as? Boolean ?: false
                 rescueReq = busDetails["rescue_request"] as? Boolean ?: false
+                upcoming_stop = busDetails["upcoming_stop"] as? String?: "NA"
             }
 
         HasBoarded(bus_no, email) { isBoarded ->
@@ -85,7 +90,7 @@ fun MyMapScreen(bus_no: String, email: String) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Map occupies 80%
-        Box(modifier = Modifier.weight(0.8f)) {
+        Box(modifier = Modifier.weight(0.7f)) {
             driverLocation?.let { location ->
                 GoogleMapWithMarker(location)
             } ?: LoadingScreen()
@@ -94,17 +99,107 @@ fun MyMapScreen(bus_no: String, email: String) {
         // Bus status occupies 20%
         Box(
             modifier = Modifier
-                .weight(0.2f)
+                .weight(0.3f)
                 .fillMaxWidth()
                 .padding(16.dp),
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(text = "Bus Operable: $busOperable")
-                Text(text = "Rescue Request: $rescueReq")
-                Text(text = "Rescue bus no: $rescue_bus")
-                Text(text = if (hasBoarded) "You have boarded the bus" else "You are waiting for the bus")
+
+                // Bus Status Card (Running / Breakdown)
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (busOperable) Color(0xFFDFFFD6) else Color(0xFFFFD6D6)
+                    ),
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .fillMaxWidth(0.9f)
+                ) {
+                    Text(
+                        text = if (busOperable) "Running" else "Breakdown",
+                        color = if (busOperable) Color(0xFF2E7D32) else Color(0xFFC62828),
+                        modifier = Modifier.padding(12.dp),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Two in a row: Rescue Request and Rescue Bus No
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    // Rescue Request Card
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFFFFF59D) // yellow-ish
+                        ),
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .weight(1f)
+                    ) {
+                        Text(
+                            text = "Rescue Req: $rescueReq",
+                            modifier = Modifier.padding(12.dp),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    // Rescue Bus Number Card
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (rescue_bus == "0") Color.LightGray else Color(0xFFBBDEFB) // Grey or Blue
+                        ),
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .weight(1f)
+                    ) {
+                        Text(
+                            text = "Rescue bus no: $rescue_bus",
+                            modifier = Modifier.padding(12.dp),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                // Two in a row: Upcoming Stop and Boarding Status
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    // Upcoming Stop
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFFE3F2FD) // Light blue-ish
+                        ),
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .weight(1f)
+                    ) {
+                        Text(
+                            text = "Upcoming stop: $upcoming_stop",
+                            modifier = Modifier.padding(12.dp),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    // Boarding status
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (hasBoarded) Color(0xFFC8E6C9) else Color(0xFFFFF59D) // Green or Yellow
+                        ),
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .weight(1f)
+                    ) {
+                        Text(
+                            text = if (hasBoarded) "Boarded" else "Not boarded",
+                            modifier = Modifier.padding(12.dp),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
+
         }
     }
 }

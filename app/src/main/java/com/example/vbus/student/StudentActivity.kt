@@ -1,6 +1,8 @@
 package com.example.vbus.student
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
@@ -25,6 +27,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.Image
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBox
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.ui.platform.LocalContext
 import com.example.vbus.R
 import com.google.firebase.messaging.FirebaseMessaging
@@ -32,6 +35,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.example.vbus.authenication.saveFcmTokenToFirestore
 
 @Composable
 fun StudentHomeScreen(navController: NavController, email: String) {
@@ -43,6 +47,12 @@ fun StudentHomeScreen(navController: NavController, email: String) {
     var regNo by remember { mutableStateOf("Fetching reg no...") }
     var backPressedOnce by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    var driver_name by remember { mutableStateOf("Driver") }
+    var driver_mobile by remember { mutableStateOf("9999999999") }
+
+    LaunchedEffect(Unit) {
+        saveFcmTokenToFirestore(email)
+    }
 
 
     BackHandler {
@@ -72,6 +82,20 @@ fun StudentHomeScreen(navController: NavController, email: String) {
         FirebaseMessaging.getInstance().subscribeToTopic(busNo)
     }
 
+    // Call this inside your composable (but NOT repeatedly in recompositions)
+    LaunchedEffect(key1 = true) {
+        db.collection("buses").get()
+            .addOnSuccessListener { bus ->
+                bus.forEach {
+                    if (it.id == busNo) {
+                        driver_name = it.getString("driver_name") ?: "N/A"
+                        driver_mobile = it.getString("driver_contact") ?: "9999999999"
+                    }
+                }
+            }
+    }
+
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -94,6 +118,12 @@ fun StudentHomeScreen(navController: NavController, email: String) {
             MenuItem("Download Letter", Icons.Default.AccountBox) { navController.navigate("letter_generation/$email") },
             MenuItem("Track My Bus", Icons.Default.AccountBox) { navController.navigate("track_bus/$busNo/$email") },
             MenuItem("Where is My Bus?", Icons.Default.AccountBox) { navController.navigate("map_test_screen/$busNo") },
+            MenuItem("Contact $driver_name", Icons.Default.Call) {
+                val intent = Intent(Intent.ACTION_DIAL).apply {
+                    data = Uri.parse("tel:$driver_mobile")
+                }
+                context.startActivity(intent)
+            },
             MenuItem("Logout", Icons.Default.AccountBox) {
                 auth.signOut()
                 navController.navigate("auth") { popUpTo(0) }

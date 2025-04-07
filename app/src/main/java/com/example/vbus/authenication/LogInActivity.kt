@@ -14,6 +14,9 @@ import com.example.vbus.student.StudentHomeScreen
 import com.google.firebase.Firebase
 import com.google.firebase.auth.*
 import android.util.Log
+import com.google.firebase.messaging.FirebaseMessaging
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 
 @Composable
 fun LoginScreen(navController: NavController) {
@@ -89,4 +92,26 @@ fun LoginScreen(navController: NavController) {
             }
         )
     }
+}
+
+fun saveFcmTokenToFirestore(email: String) {
+    val db = FirebaseFirestore.getInstance()
+
+    FirebaseMessaging.getInstance().token
+        .addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                val fcmToken = task.result
+
+                db.collection("students").document(email)
+                    .update("fcmToken", fcmToken)
+                    .addOnSuccessListener {
+                        Log.d("FCM", "FCM Token saved successfully")
+                    }
+                    .addOnFailureListener {
+                        Log.e("FCM", "Failed to save token: ${it.message}")
+                    }
+            } else {
+                Log.e("FCM", "Fetching FCM token failed", task.exception)
+            }
+        }
 }

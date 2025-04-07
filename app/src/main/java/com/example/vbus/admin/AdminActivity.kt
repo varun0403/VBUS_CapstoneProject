@@ -9,6 +9,10 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBox
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -60,11 +64,12 @@ fun AdminHomeScreen(navController: NavController, name: String) {
                 "This is a test message."
             )
         },
-        MenuItem("Complaints", Icons.Default.AccountBox) { navController.navigate("admin_complaint_home") },
-        MenuItem("Announcements", Icons.Default.AccountBox) { navController.navigate("admin_announcement") },
+        MenuItem("Complaints", Icons.Default.Warning) { navController.navigate("admin_complaint_home") },
+        MenuItem("Announcements", Icons.Default.Notifications) { navController.navigate("admin_announcement") },
         MenuItem("Student Details", Icons.Default.AccountBox) { navController.navigate("fetch_student_data") },
-        MenuItem("Camera Test", Icons.Default.AccountBox) { navController.navigate("camera_screen") },
-        MenuItem("Track Buses", Icons.Default.AccountBox) { navController.navigate("admin_tracking") }
+        MenuItem("Camera Test", Icons.Default.Face) { navController.navigate("camera_screen") },
+        MenuItem("Track Buses", Icons.Default.LocationOn) { navController.navigate("admin_tracking") },
+        MenuItem("Bus Status", Icons.Default.AccountBox) { navController.navigate("admin_bus_viewer") }
     )
 
     Column(

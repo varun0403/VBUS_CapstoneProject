@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.util.Log
+import com.google.firebase.storage.FirebaseStorage
 import org.tensorflow.lite.Interpreter
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
@@ -11,6 +12,27 @@ import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.json.JSONArray
+import java.io.ByteArrayOutputStream
+
+fun uploadToFirebaseStorage(bitmap: Bitmap) {
+    val storage = FirebaseStorage.getInstance()
+    val storageRef = storage.reference
+    val fileName = "debug_faces/debug_face_${System.currentTimeMillis()}.jpg"
+    val faceImageRef = storageRef.child(fileName)
+
+    val baos = ByteArrayOutputStream()
+    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, baos)
+    val data = baos.toByteArray()
+    val uploadTask = faceImageRef.putBytes(data)
+    uploadTask
+        .addOnSuccessListener {
+            Log.d("FaceRecognition", "Uploaded face image to Firebase: $fileName")
+        }
+        .addOnFailureListener {
+            Log.e("FaceRecognition", "Failed to upload face image: ${it.message}")
+        }
+}
+
 
 fun loadModelFile(context: Context, modelPath: String): MappedByteBuffer {
     return try {
@@ -31,24 +53,25 @@ fun createFaceNetInterpreter(context: Context): org.tensorflow.lite.Interpreter 
     return Interpreter(model)
 }
 
-fun preprocessFace(bitmap: Bitmap, faceRect: Rect): Bitmap {
+fun preprocessFace(context: Context, bitmap: Bitmap, faceRect: Rect): Bitmap {
     Log.d("FaceRecognition", "Bitmap dimensions: ${bitmap.width}x${bitmap.height}")
     Log.d("FaceRecognition", "Face rectangle: $faceRect")
 
-    // Validate faceRect coordinates
     val left = faceRect.left.coerceAtLeast(0).coerceAtMost(bitmap.width - 1)
     val top = faceRect.top.coerceAtLeast(0).coerceAtMost(bitmap.height - 1)
     val right = faceRect.right.coerceAtLeast(left + 1).coerceAtMost(bitmap.width)
     val bottom = faceRect.bottom.coerceAtLeast(top + 1).coerceAtMost(bitmap.height)
 
-    // Ensure the rectangle is valid
     if (right <= left || bottom <= top) {
         throw IllegalArgumentException("Invalid face rectangle dimensions: $faceRect")
     }
 
-    // Crop and resize the face
     val croppedBitmap = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
-    return Bitmap.createScaledBitmap(croppedBitmap, 160, 160, true)
+    val resizedBitmap = Bitmap.createScaledBitmap(croppedBitmap, 160, 160, true)
+
+    uploadToFirebaseStorage(resizedBitmap)
+
+    return resizedBitmap
 }
 
 fun bitmapToByteBuffer(bitmap: Bitmap): ByteBuffer {
@@ -64,9 +87,9 @@ fun bitmapToByteBuffer(bitmap: Bitmap): ByteBuffer {
 
     // is this normalisation
     for (pixelValue in intValues) {
-        buffer.putFloat(((pixelValue shr 16 and 0xFF) - 127.5f) / 128f)
-        buffer.putFloat(((pixelValue shr 8 and 0xFF) - 127.5f) / 128f)
-        buffer.putFloat(((pixelValue and 0xFF) - 127.5f) / 128f)
+        buffer.putFloat(((pixelValue shr 16 and 0xFF) - 127.5f) / 127.5f)
+        buffer.putFloat(((pixelValue shr 8 and 0xFF) - 127.5f) / 127.5f)
+        buffer.putFloat(((pixelValue and 0xFF) - 127.5f) / 127.5f)
     }
 
     return buffer
@@ -79,14 +102,14 @@ fun getFaceEmbedding(interpreter: Interpreter, bitmap: Bitmap): FloatArray {
 
     try {
         interpreter.run(byteBuffer, output)
-    }
-    catch (e: Exception) {
+    } catch (e: Exception) {
         Log.e("FaceRecognition", "Model inference failed: ${e.message}")
         throw RuntimeException("Model inference failed")
     }
 
     return output[0]
 }
+
 
 
 fun cosineSimilarity(embedding1: FloatArray, embedding2: List<Float>): Float {
@@ -125,6 +148,7 @@ fun loadEmbeddings(context: Context): List<FaceEmbedding> {
 
 
 fun recognizeFace(context: Context, bitmap: Bitmap, faceRect: Rect): String {
+    // Load the FaceNet model
     val interpreter = try {
         createFaceNetInterpreter(context)
     } catch (e: Exception) {
@@ -132,18 +156,22 @@ fun recognizeFace(context: Context, bitmap: Bitmap, faceRect: Rect): String {
         return "Error loading model"
     }
 
+    // Preprocess the face image
     val preprocessedFace = try {
-        preprocessFace(bitmap, faceRect)
+        preprocessFace(context, bitmap, faceRect) // <-- uses updated version that saves the image
     } catch (e: IllegalArgumentException) {
         Log.e("FaceRecognition", "Face preprocessing failed: ${e.message}")
         return "Invalid face area"
     }
 
+    // Generate the 128-D embedding
     val faceEmbedding = getFaceEmbedding(interpreter, preprocessedFace)
-    val storedEmbeddings = loadEmbeddings(context)
 
+    // Load stored embeddings (your known faces)
+    val storedEmbeddings = loadEmbeddings(context)
     if (storedEmbeddings.isEmpty()) return "No known faces available"
 
+    // Compare the embeddings using cosine similarity
     var bestMatch: String? = null
     var bestSimilarity = -1f
 
@@ -155,6 +183,8 @@ fun recognizeFace(context: Context, bitmap: Bitmap, faceRect: Rect): String {
         }
     }
 
-    return if (bestSimilarity > 0.7) bestMatch ?: "Unknown" else "Unknown"
+    Log.d("FaceRecognition", "Best match: $bestMatch with similarity: $bestSimilarity")
+
+    return if (bestSimilarity > 0.7f) bestMatch ?: "Unknown" else "Unknown"
 }
 

@@ -1,17 +1,22 @@
 package com.example.vbus.student
 
 import android.annotation.SuppressLint
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 
 @Composable
 fun StudentAnnouncementScreen(navController: NavController) {
@@ -64,8 +69,10 @@ fun StudentAnnouncementScreen(navController: NavController) {
                     AnnouncementCard(
                         text = announcement["text"] as? String ?: "No content",
                         timestamp = announcement["timestamp"] as? Long ?: 0L,
-                        isHighlighted = (index == 0) // Pass true for the latest announcement
+                        isHighlighted = (index == 0),
+                        documentUrl = announcement["fileUrl"] as? String,
                     )
+
                 }
             }
         }
@@ -74,11 +81,13 @@ fun StudentAnnouncementScreen(navController: NavController) {
 
 @SuppressLint("SimpleDateFormat")
 @Composable
-fun AnnouncementCard(text: String, timestamp: Long, isHighlighted: Boolean) {
+fun AnnouncementCard(text: String, timestamp: Long, isHighlighted: Boolean, documentUrl: String?) {
+    val context = LocalContext.current
+
     val backgroundColor = if (isHighlighted) {
-        MaterialTheme.colorScheme.primaryContainer // Highlight color
+        MaterialTheme.colorScheme.primaryContainer
     } else {
-        MaterialTheme.colorScheme.surface // Default background color
+        MaterialTheme.colorScheme.surface
     }
 
     Card(
@@ -87,8 +96,33 @@ fun AnnouncementCard(text: String, timestamp: Long, isHighlighted: Boolean) {
         colors = CardDefaults.cardColors(containerColor = backgroundColor)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(text = text, style = MaterialTheme.typography.bodyLarge)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f)
+                )
+
+                if (!documentUrl.isNullOrEmpty()) {
+                    IconButton(onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            data = Uri.parse(documentUrl)
+                        }
+                        context.startActivity(intent)
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Info, // 👁️ view icon
+                            contentDescription = "View Document"
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
+
             Text(
                 text = "Posted: ${java.text.SimpleDateFormat("dd/MM/yyyy HH:mm").format(timestamp)}",
                 style = MaterialTheme.typography.bodySmall

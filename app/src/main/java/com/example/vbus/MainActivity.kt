@@ -136,9 +136,6 @@ class MainActivity : ComponentActivity() {
                         composable("student_announcement") {
                             StudentAnnouncementScreen(navController)
                         }
-                        composable("notification_test") {
-                            NotificationTestScreen()
-                        }
                         composable("track_bus/{bus_no}/{email}",
                             arguments = listOf(navArgument("bus_no") { type = NavType.StringType })
                         ) {
@@ -174,6 +171,9 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("camera_screen"){
                             CameraScreen()
+                        }
+                        composable("admin_bus_viewer"){
+                            AdminBusStatusScreen()
                         }
                         composable("map_test_screen/{bus_no}",
                             arguments = listOf(navArgument("bus_no") { type = NavType.StringType })
