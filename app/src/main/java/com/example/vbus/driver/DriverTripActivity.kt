@@ -35,9 +35,9 @@ import java.time.format.DateTimeFormatter
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.example.vbus.MyFirebaseMessagingService
 import com.example.vbus.routes
 import com.example.vbus.studentBoardingStatus
+import com.example.vbus.student_routes
 import com.google.android.gms.tasks.Tasks
 import com.google.firebase.database.*
 import com.google.firebase.firestore.GeoPoint
@@ -256,12 +256,12 @@ fun startLocationUpdates(
             Log.d("UpcomingCheckpoint", "Next checkpoint assigned: $firstCheckpoint")
             if (!busDetails.contains(date_)) {
                 db.collection("bus_status").document(bus_no).set(mapOf(
-                        date_ to mapOf(
-                            "count" to 0,
-                            "bus_operable" to true,
-                            "upcoming_checkpoint" to firstCheckpoint,
-                            "rescue_request" to false,
-                            "boarding_status" to studentBoardingStatus[bus_no])),
+                    date_ to mapOf(
+                        "count" to 0,
+                        "bus_operable" to true,
+                        "upcoming_checkpoints" to checkpointKeys,
+                        "rescue_request" to false,
+                        "boarding_status" to studentBoardingStatus[bus_no])),
                     SetOptions.merge())
                     .addOnSuccessListener {
                         Log.d("Firestore", "Date structure for $date_ ensured.")
@@ -360,15 +360,11 @@ fun startLocationUpdates(
                                 if (!checkpoints.contains(checkpointValue)) {
                                     checkpoints.add(checkpointValue)
                                     existingData["checkpoints"] = checkpoints
+                                    // ✅ Remove this checkpoint from upcoming_checkpoints
+                                    val upcomingList = (existingData["upcoming_checkpoints"] as? MutableList<String>) ?: mutableListOf()
+                                    upcomingList.remove(checkpointValue)
+                                    existingData["upcoming_checkpoints"] = upcomingList
 
-                                    // ✅ Update upcoming checkpoint
-                                    val nextCheckpointValue = if (index + 1 < checkPoints.size) {
-                                        "c${index + 2}" // Next checkpoint
-                                    }
-                                    else {
-                                        "End of Route" // No further checkpoints
-                                    }
-                                    existingData["upcoming_checkpoint"] = nextCheckpointValue
 
                                     busRef.update(date_, existingData)
                                 }
@@ -455,8 +451,8 @@ fun alertNearbyBuses(brokenBusNo: String) {
                         .get()
                         .addOnSuccessListener { busData ->
                             val brokenBusData = busData.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
-                            val upcomingCheckpointBrokenBus = brokenBusData["upcoming_checkpoint"] as? String
-                            Log.d("Upcoming Checkpoint", upcomingCheckpointBrokenBus.toString())
+                            val upcomingCheckpointsBrokenBus = brokenBusData["upcoming_checkpoints"] as? List<String> ?: emptyList()
+                            Log.d("Upcoming Checkpoint", upcomingCheckpointsBrokenBus.toString())
 
                             val validBusesForRescue = mutableListOf<String>()
 
@@ -469,11 +465,10 @@ fun alertNearbyBuses(brokenBusNo: String) {
                                     .addOnSuccessListener { thisBus ->
                                         val thisBusData = thisBus.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
                                         val available_seats = 20 - (thisBusData["count"] as? Long ?: 0).toInt()
-                                        val upcomingCheckpointActiveBus = thisBusData["upcoming_checkpoint"] as? String
-                                        val upcomingCheckpointActiveBusNum = upcomingCheckpointActiveBus?.substring(1)?.toIntOrNull() ?: return@addOnSuccessListener
-                                        val upcomingCheckpointBrokenBusNum = upcomingCheckpointBrokenBus?.substring(1)?.toIntOrNull() ?: return@addOnSuccessListener
+                                        val upcomingCheckpointsActiveBus = thisBusData["upcoming_checkpoints"] as? List<String> ?: emptyList()
 
-                                        if (upcomingCheckpointActiveBusNum <= upcomingCheckpointBrokenBusNum) {
+
+                                        if (upcomingCheckpointsActiveBus.intersect(upcomingCheckpointsBrokenBus).isNotEmpty()) {
                                             Log.d("Alert", "Notify bus $activeBusNo about the broken bus $brokenBusNo. Available seats $available_seats")
 
                                             validBusesForRescue.add(activeBusNo)
@@ -507,7 +502,6 @@ fun alertNearbyBuses(brokenBusNo: String) {
         }
     })
 }
-
 
 fun fetchBoardedStudents(brokenBusNo: String, date_: String, callback: (List<String>) -> Unit) {
     val db = Firebase.firestore

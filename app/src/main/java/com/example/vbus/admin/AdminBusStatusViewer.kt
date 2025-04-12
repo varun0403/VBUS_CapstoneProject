@@ -3,7 +3,9 @@ package com.example.vbus.admin
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import androidx.annotation.RequiresApi
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,6 +23,8 @@ import androidx.compose.ui.unit.dp
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import com.example.vbus.driver.getCurrentDate
+import com.google.firebase.Firebase
+import com.google.firebase.firestore.firestore
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
@@ -112,9 +116,34 @@ fun AdminBusStatusScreen() {
 
 @Composable
 fun BusCard(bus: BusInfo) {
+    val db = Firebase.firestore
     val context = LocalContext.current
-    val bgColor = if (bus.isOperable)
-        Color(0xFFD0F0C0) else Color(0xFFFFC2C2)
+    val bgColor = if (bus.isOperable) Color(0xFFD0F0C0) else Color(0xFFFFC2C2)
+
+    var unallocatedStudentsList by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    // Fetch unallocated students only if the bus is inoperable
+    LaunchedEffect(Unit) {
+        if (!bus.isOperable) {
+            try {
+                val snapshot = db.collection("allocated_buses").get().await()
+
+                val unallocated = snapshot.documents.flatMap { doc ->
+                    val data = doc.data ?: emptyMap<String, String>()
+                    data.filterValues { it == "NA" }.keys
+                }.map { it.toString() }
+
+                unallocatedStudentsList = unallocated
+                Log.d("Unallocated students", unallocatedStudentsList.toString())
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Log.e("Firestore", "Failed to fetch unallocated students: ${e.message}")
+            }
+        }
+    }
+
+
+    var expanded by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -144,9 +173,30 @@ fun BusCard(bus: BusInfo) {
             Text("Boarded Count: ${bus.boardedCount}")
             Text("Upcoming stop: ${bus.upcoming_stop}")
             Text("Status: ${if (bus.isOperable) "Operable ✅" else "Inoperable ❌"}")
+
+            // Show dropdown only if the bus is inoperable and there are unallocated students
+            if (!bus.isOperable && unallocatedStudentsList.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (expanded) "Hide Unallocated Students ▲" else "Show Unallocated Students ▼")
+                }
+
+                AnimatedVisibility(visible = expanded) {
+                    Column(modifier = Modifier.padding(top = 8.dp)) {
+                        unallocatedStudentsList.forEach { email ->
+                            Text("• $email", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
         }
     }
 }
+
 
 // Add this data class
 

@@ -3,6 +3,7 @@ package com.example.vbus
 import android.annotation.SuppressLint
 import android.os.Build
 import android.os.Bundle
+import android.os.StrictMode
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.annotation.RequiresApi
@@ -55,7 +56,10 @@ import com.example.vbus.student.*
 import com.example.vbus.ui.theme.VBUSTheme
 import com.example.vbus.student.CustomCard
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.GeoPoint
+import com.google.firebase.firestore.ktx.firestore
 import kotlinx.coroutines.delay
+import com.google.firebase.ktx.Firebase
 
 class MainActivity : ComponentActivity() {
     @SuppressLint("MissingSuperCall")
@@ -65,6 +69,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             VBUSTheme{
+                val policy = StrictMode.ThreadPolicy.Builder().permitAll().build()
+                StrictMode.setThreadPolicy(policy)
                 val navController = rememberNavController()
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     NavHost(
@@ -191,6 +197,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@SuppressLint("MutableCollectionMutableState")
 @Composable
 fun Base(navController: NavController) {
     LaunchedEffect(Unit) {

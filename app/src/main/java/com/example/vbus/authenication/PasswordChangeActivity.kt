@@ -1,19 +1,13 @@
 package com.example.vbus.authenication
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import com.example.vbus.student.StudentHomeScreen
 import com.google.firebase.Firebase
 import com.google.firebase.auth.*
-import android.util.Log
 import androidx.compose.ui.platform.LocalContext
 import com.example.vbus.notifications.MyFirebaseMessagingService
 
@@ -42,9 +36,6 @@ fun PasswordChangeScreen(navController: NavController) {
                         .addOnCompleteListener { task ->
                             if (task.isSuccessful) {
                                 email_val = " "
-                                MyFirebaseMessagingService.showNotification(context,
-                                    "Password reset sent successfully!",
-                                    "Kindly check your email")
                             }
                         }
                 }

@@ -37,6 +37,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.example.vbus.authenication.saveFcmTokenToFirestore
+import com.example.vbus.notification.sendingNotification
+import com.example.vbus.notification.NotificationBody
+import com.example.vbus.notification.NotificationMessage
+import com.example.vbus.notification.NotificationWrapper
 
 @Composable
 fun StudentHomeScreen(navController: NavController, email: String) {
@@ -50,21 +54,23 @@ fun StudentHomeScreen(navController: NavController, email: String) {
     val context = LocalContext.current
     var driver_name by remember { mutableStateOf("Driver") }
     var driver_mobile by remember { mutableStateOf("9999999999") }
+    var fcmToken = "e0Zqi72kRHqoFsO2jox6GR:APA91bHmDCCt8xYcguqkYlvJd4nPzUE11UnW6yN3ktEbFbMWv1w6Xtdt7qYGoc9NmRGoPl2PK2IkwMSGcij1wOVpb0hySsfzaLJ_7tQtdfQmUjIAhjjhV7I"
 
 //    LaunchedEffect(Unit) {
 //        saveFcmTokenToFirestore(email)
 //    }
 
-    LaunchedEffect(Unit) {
-        FirebaseMessaging.getInstance().subscribeToTopic("listenAnnouncements")
-            .addOnCompleteListener { task ->
-                if (task.isSuccessful) {
-                    Log.d("FCM", "Subscribed to listenAnnouncements")
-                } else {
-                    Log.e("FCM", "Subscription failed", task.exception)
-                }
-            }
-    }
+
+//    LaunchedEffect(Unit) {
+//        FirebaseMessaging.getInstance().subscribeToTopic("listenAnnouncements")
+//            .addOnCompleteListener { task ->
+//                if (task.isSuccessful) {
+//                    Log.d("FCM", "Subscribed to listenAnnouncements")
+//                } else {
+//                    Log.e("FCM", "Subscription failed", task.exception)
+//                }
+//            }
+//    }
 
     BackHandler {
         if (backPressedOnce) {
@@ -92,7 +98,6 @@ fun StudentHomeScreen(navController: NavController, email: String) {
     LaunchedEffect(Unit) {
         FirebaseMessaging.getInstance().subscribeToTopic(busNo)
     }
-
     // Call this inside your composable (but NOT repeatedly in recompositions)
     LaunchedEffect(key1 = true) {
         db.collection("buses").get()
@@ -106,6 +111,28 @@ fun StudentHomeScreen(navController: NavController, email: String) {
             }
     }
 
+//    LaunchedEffect(Unit){
+//        docRef.get()
+//            .addOnSuccessListener { document->
+//                fcmToken = document.getString("fcmToken").orEmpty()
+//            }
+//    }
+
+    LaunchedEffect(Unit){
+        val notificationBody = NotificationBody(
+            title = "Bus 1",
+            body = "Bus has reached stop 1. Enroute to stop 2"
+        )
+        Log.d("FCM TOKEN",fcmToken)
+        val message = NotificationMessage(
+            token = fcmToken,
+            notification = notificationBody
+        )
+
+        val wrapper = NotificationWrapper(message = message)
+
+        sendingNotification(wrapper, context)
+    }
 
     Column(
         modifier = Modifier

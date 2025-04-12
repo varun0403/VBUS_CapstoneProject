@@ -17,6 +17,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.example.vbus.notification.NotificationBody
+import com.example.vbus.notification.NotificationMessage
+import com.example.vbus.notification.NotificationWrapper
+import com.example.vbus.notification.sendingNotification
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.tasks.await
@@ -25,6 +29,7 @@ import java.util.*
 
 @Composable
 fun AdminAnnouncementScreen() {
+    val context = LocalContext.current
     val db = FirebaseFirestore.getInstance()
     var announcements by remember { mutableStateOf<List<Pair<String, Map<String, Any>>>>(emptyList()) }
     var errorMessage by remember { mutableStateOf("") }
@@ -95,7 +100,7 @@ fun AdminAnnouncementScreen() {
         AnnouncementDialog(
             onDismiss = { showDialog = false },
             onPost = { text, uri ->
-                postAnnouncementWithFile(db, text, uri) { result, newAnnouncement ->
+                postAnnouncementWithFile(context,db,text,uri) { result, newAnnouncement ->
                     if (result == "Announcement posted") {
                         showDialog = false
                         announcements = announcements + ("" to newAnnouncement)
@@ -213,18 +218,48 @@ fun AnnouncementCard(
 }
 
 fun postAnnouncementWithFile(
+    context: Context,
     db: FirebaseFirestore,
     text: String,
     fileUri: Uri?,
     onComplete: (String, Map<String, Any>) -> Unit
 ) {
     val timestamp = System.currentTimeMillis()
+    val postAndNotify: (Map<String, Any>) -> Unit = { announcement ->
+        db.collection("announcements").add(announcement)
+            .addOnSuccessListener {
+                onComplete("Announcement posted", announcement)
+
+                // ✅ Send notification to all students with valid FCM token
+                db.collection("students").get().addOnSuccessListener { snapshot ->
+                    for (doc in snapshot.documents) {
+                        val fcmToken = doc.getString("fcmToken")
+                        if (!fcmToken.isNullOrEmpty()) {
+                            val notification = NotificationBody(
+                                title = "New Announcement",
+                                body = text
+                            )
+                            val message = NotificationMessage(
+                                token = fcmToken,
+                                notification = notification
+                            )
+                            val wrapper = NotificationWrapper(message = message)
+                            sendingNotification(wrapper, context)
+                        }
+                    }
+                }
+
+            }
+            .addOnFailureListener {
+                onComplete("Failed to post announcement", emptyMap())
+            }
+    }
+
     if (fileUri == null) {
         val announcement = mapOf("text" to text, "timestamp" to timestamp)
-        db.collection("announcements").add(announcement)
-            .addOnSuccessListener { onComplete("Announcement posted", announcement) }
-            .addOnFailureListener { onComplete("Failed to post announcement", emptyMap()) }
-    } else {
+        postAndNotify(announcement)
+    }
+    else {
         val storageRef = FirebaseStorage.getInstance().reference
             .child("announcements/${UUID.randomUUID()}")
         storageRef.putFile(fileUri)
@@ -237,13 +272,13 @@ fun postAnnouncementWithFile(
                     "timestamp" to timestamp,
                     "fileUrl" to uri.toString()
                 )
-                db.collection("announcements").add(announcement)
-                    .addOnSuccessListener { onComplete("Announcement posted", announcement) }
+                postAndNotify(announcement)
             }.addOnFailureListener {
                 onComplete("Failed to post announcement", emptyMap())
             }
     }
 }
+
 
 fun deleteAnnouncement(db: FirebaseFirestore, id: String, onComplete: (Boolean) -> Unit) {
     db.collection("announcements").document(id).delete()

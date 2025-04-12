@@ -45,7 +45,8 @@ android {
     }
     packaging {
         resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/{AL2.0,LGPL2.1,DEPENDENCIES,LICENSE,NOTICE}"
+            excludes += "mozilla/public-suffix-list.txt"
         }
     }
 }
@@ -85,7 +86,10 @@ dependencies {
     implementation(libs.androidx.material)
     implementation(platform(libs.firebase.bom))
     implementation(libs.okhttp)
+    implementation(libs.google.auth.library.oauth2.http)
     implementation(libs.gson)
+    implementation(libs.retrofit)
+    implementation(libs.converter.gson)
     //Google Maps SDK
     implementation(libs.play.services.maps)
     implementation(libs.maps.compose)
