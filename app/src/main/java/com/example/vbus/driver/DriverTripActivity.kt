@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.vbus.routes
 import com.example.vbus.studentBoardingStatus
-import com.example.vbus.student_routes
+import com.example.vbus.student_stops
 import com.google.android.gms.tasks.Tasks
 import com.google.firebase.database.*
 import com.google.firebase.firestore.GeoPoint
@@ -251,6 +251,7 @@ fun startLocationUpdates(
             val checkpointsMap = busDetails.get("check_points") as? Map<String, Any> ?: emptyMap()
             val checkpointKeys = checkpointsMap.keys.toList()
             val stops = busDetails.get("stops") as? Map<String, Any> ?: emptyMap()
+            val stopsKeys = stops.keys.toList()
             Log.d("Check Point Keys: ", checkpointKeys.toString())
             val firstCheckpoint = checkpointKeys.firstOrNull() ?: ""
             Log.d("UpcomingCheckpoint", "Next checkpoint assigned: $firstCheckpoint")
@@ -261,6 +262,7 @@ fun startLocationUpdates(
                         "bus_operable" to true,
                         "upcoming_checkpoints" to checkpointKeys,
                         "rescue_request" to false,
+                        "upcoming_stops" to stopsKeys,
                         "boarding_status" to studentBoardingStatus[bus_no])),
                     SetOptions.merge())
                     .addOnSuccessListener {
@@ -320,7 +322,9 @@ fun startLocationUpdates(
                             busRef.get().addOnSuccessListener { document ->
                                 val existingData = document.get(date_) as? MutableMap<String, Any> ?: mutableMapOf()
                                 val timestamps = (existingData["timestamp"] as? MutableMap<String, Long>) ?: mutableMapOf()
-
+                                val stops = (existingData["upcoming_stops"] as? MutableList<String>) ?: mutableListOf()
+                                stops.remove("s${index + 1}")
+                                existingData["upcoming_stops"] = stops
                                 // Save current stop timestamp
                                 timestamps["s${index + 1}"] = timestamp
                                 existingData["timestamp"] = timestamps
@@ -328,12 +332,14 @@ fun startLocationUpdates(
                                 // ✅ Set upcoming stop
                                 val nextStopValue = if (index + 1 < geofenceCenters.size) {
                                     "s${index + 2}"
-                                } else {
+                                }
+                                else {
                                     "VIT"
                                 }
                                 existingData["upcoming_stop"] = nextStopValue
-
-                                busRef.set(mapOf(date_ to existingData), SetOptions.merge())
+                                busRef.set(
+                                    mapOf(date_ to existingData
+                                    ), SetOptions.merge())
                                     .addOnSuccessListener {
                                         Log.d("Firestore", "Stop ${index + 1} timestamp and upcoming_stop updated for date $date_.")
                                     }
@@ -452,8 +458,24 @@ fun alertNearbyBuses(brokenBusNo: String) {
                         .addOnSuccessListener { busData ->
                             val brokenBusData = busData.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
                             val upcomingCheckpointsBrokenBus = brokenBusData["upcoming_checkpoints"] as? List<String> ?: emptyList()
-                            Log.d("Upcoming Checkpoint", upcomingCheckpointsBrokenBus.toString())
-
+                            Log.d("Upcoming Checkpoints", upcomingCheckpointsBrokenBus.toString())
+                            val upcomingStopsBrokenBus = brokenBusData["upcoming_stops"] as? List<String> ?: emptyList()
+                            val num_of_upcomingStopsBrokenBus = upcomingStopsBrokenBus.size
+                            if (num_of_upcomingStopsBrokenBus == 0){
+                                val students_in_bus = 20 - (brokenBusData["count"] as? Long ?: 0).toInt()
+                            }
+                            else{
+                                var pendingBoardingCountBrokenBus = 0
+                                // Fetch map of stop-wise students for this active bus
+                                val stopWiseStudents = student_stops[brokenBusNo] ?: mutableMapOf()
+                                // Loop over remaining upcoming stops and count students at each
+                                for (stop in upcomingStopsBrokenBus) {
+                                    val studentsAtStop = stopWiseStudents[stop] ?: mutableListOf()
+                                    pendingBoardingCountBrokenBus += studentsAtStop.size
+                                }
+                                val currentCount = (brokenBusData["count"] as? Long ?: 0).toInt()
+                                val totalStudentRescueCount = currentCount + pendingBoardingCountBrokenBus
+                            }
                             val validBusesForRescue = mutableListOf<String>()
 
                             for (activeBusNo in activeBusesInRoute) {
@@ -464,15 +486,36 @@ fun alertNearbyBuses(brokenBusNo: String) {
                                     .get()
                                     .addOnSuccessListener { thisBus ->
                                         val thisBusData = thisBus.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
-                                        val available_seats = 20 - (thisBusData["count"] as? Long ?: 0).toInt()
                                         val upcomingCheckpointsActiveBus = thisBusData["upcoming_checkpoints"] as? List<String> ?: emptyList()
 
-
                                         if (upcomingCheckpointsActiveBus.intersect(upcomingCheckpointsBrokenBus).isNotEmpty()) {
-                                            Log.d("Alert", "Notify bus $activeBusNo about the broken bus $brokenBusNo. Available seats $available_seats")
-
-                                            validBusesForRescue.add(activeBusNo)
-
+                                            // Step 4.1 logic: check how many pending stops left for the active bus
+                                            val upcomingStops = thisBusData["upcoming_stops"] as? List<String> ?: emptyList()
+                                            val num_of_upcomingStops = upcomingStops.size
+                                            if (num_of_upcomingStops == 0){
+                                                val available_seats = 20 - (thisBusData["count"] as? Long ?: 0).toInt()
+                                                if(available_seats > 0){
+                                                    validBusesForRescue.add(activeBusNo)
+                                                    Log.d("Alert", "Notify bus $activeBusNo about the broken bus $brokenBusNo. Available seats $available_seats")
+                                                }
+                                            }
+                                            else{
+                                                var pendingBoardingCount = 0
+                                                // Fetch map of stop-wise students for this active bus
+                                                val stopWiseStudents = student_stops[activeBusNo] ?: mutableMapOf()
+                                                // Loop over remaining upcoming stops and count students at each
+                                                for (stop in upcomingStops) {
+                                                    val studentsAtStop = stopWiseStudents[stop] ?: mutableListOf()
+                                                    pendingBoardingCount += studentsAtStop.size
+                                                }
+                                                val currentCount = (thisBusData["count"] as? Long ?: 0).toInt()
+                                                val availableSeats = 20 - currentCount - pendingBoardingCount
+                                                Log.d("Seat Calculation", "Bus $activeBusNo has $availableSeats available after accounting for $pendingBoardingCount pending boarders.")
+                                                if (availableSeats > 0) {
+                                                    validBusesForRescue.add(activeBusNo)
+                                                    Log.d("Alert", "Notify bus $activeBusNo about the broken bus $brokenBusNo. Available seats $availableSeats")
+                                                }
+                                            }
                                             // Step 5.2: Mark active bus for rescue
                                             db.collection("bus_status").document(activeBusNo)
                                                 .set(
