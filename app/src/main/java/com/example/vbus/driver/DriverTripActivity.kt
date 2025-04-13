@@ -459,25 +459,7 @@ fun alertNearbyBuses(brokenBusNo: String) {
                             val brokenBusData = busData.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
                             val upcomingCheckpointsBrokenBus = brokenBusData["upcoming_checkpoints"] as? List<String> ?: emptyList()
                             Log.d("Upcoming Checkpoints", upcomingCheckpointsBrokenBus.toString())
-                            val upcomingStopsBrokenBus = brokenBusData["upcoming_stops"] as? List<String> ?: emptyList()
-                            val num_of_upcomingStopsBrokenBus = upcomingStopsBrokenBus.size
-                            if (num_of_upcomingStopsBrokenBus == 0){
-                                val students_in_bus = 20 - (brokenBusData["count"] as? Long ?: 0).toInt()
-                            }
-                            else{
-                                var pendingBoardingCountBrokenBus = 0
-                                // Fetch map of stop-wise students for this active bus
-                                val stopWiseStudents = student_stops[brokenBusNo] ?: mutableMapOf()
-                                // Loop over remaining upcoming stops and count students at each
-                                for (stop in upcomingStopsBrokenBus) {
-                                    val studentsAtStop = stopWiseStudents[stop] ?: mutableListOf()
-                                    pendingBoardingCountBrokenBus += studentsAtStop.size
-                                }
-                                val currentCount = (brokenBusData["count"] as? Long ?: 0).toInt()
-                                val totalStudentRescueCount = currentCount + pendingBoardingCountBrokenBus
-                            }
-                            val validBusesForRescue = mutableListOf<String>()
-
+                            val validBusesForRescue = mutableMapOf<String,Int>()
                             for (activeBusNo in activeBusesInRoute) {
                                 if (activeBusNo == brokenBusNo) continue // Skip itself
 
@@ -495,7 +477,7 @@ fun alertNearbyBuses(brokenBusNo: String) {
                                             if (num_of_upcomingStops == 0){
                                                 val available_seats = 20 - (thisBusData["count"] as? Long ?: 0).toInt()
                                                 if(available_seats > 0){
-                                                    validBusesForRescue.add(activeBusNo)
+                                                    validBusesForRescue.put(activeBusNo, available_seats)
                                                     Log.d("Alert", "Notify bus $activeBusNo about the broken bus $brokenBusNo. Available seats $available_seats")
                                                 }
                                             }
@@ -512,7 +494,7 @@ fun alertNearbyBuses(brokenBusNo: String) {
                                                 val availableSeats = 20 - currentCount - pendingBoardingCount
                                                 Log.d("Seat Calculation", "Bus $activeBusNo has $availableSeats available after accounting for $pendingBoardingCount pending boarders.")
                                                 if (availableSeats > 0) {
-                                                    validBusesForRescue.add(activeBusNo)
+                                                    validBusesForRescue.put(activeBusNo, availableSeats)
                                                     Log.d("Alert", "Notify bus $activeBusNo about the broken bus $brokenBusNo. Available seats $availableSeats")
                                                 }
                                             }
@@ -532,7 +514,6 @@ fun alertNearbyBuses(brokenBusNo: String) {
                                     }
                             }
 
-                            // 🚀 **Fetch students AFTER processing all buses**
                             fetchBoardedStudents(brokenBusNo, date_) { boardedStudents ->
                                 allocateStudentsToBuses(boardedStudents, validBusesForRescue, date_, brokenBusNo)
                             }
@@ -553,9 +534,27 @@ fun fetchBoardedStudents(brokenBusNo: String, date_: String, callback: (List<Str
         .addOnSuccessListener { busData ->
             val brokenBusData = busData.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
             val studentsMap = brokenBusData["boarding_status"] as? Map<String, Long> ?: return@addOnSuccessListener
-
             val boardedStudents = studentsMap.filterValues { it == 1L }.keys.toList()
-            callback(boardedStudents) // Pass the boarded students list to next step
+            val waitingStudents = mutableListOf<String>()
+            val upcomingStopsBrokenBus = brokenBusData["upcoming_stops"] as? List<String> ?: emptyList()
+            val num_of_upcomingStopsBrokenBus = upcomingStopsBrokenBus.size
+            if (num_of_upcomingStopsBrokenBus > 0){
+                var pendingBoardingCountBrokenBus = 0
+                // Fetch map of stop-wise students for this active bus
+                val stopWiseStudents = student_stops[brokenBusNo] ?: mutableMapOf()
+                // Loop over remaining upcoming stops and count students at each
+                for (stop in upcomingStopsBrokenBus) {
+                    val studentsAtStop = stopWiseStudents[stop] ?: mutableListOf()
+                    pendingBoardingCountBrokenBus += studentsAtStop.size
+                    for (students in studentsAtStop){
+                        waitingStudents.add(students)
+                    }
+                }
+                val currentCount = (brokenBusData["count"] as? Long ?: 0).toInt()
+                val totalStudentRescueCount = currentCount + pendingBoardingCountBrokenBus
+            }
+            val allStudents = boardedStudents + waitingStudents
+            callback(allStudents)// Pass the boarded students list to next step
         }
         .addOnFailureListener {
             Log.e("Firestore", "Failed to fetch boarded students", it)
@@ -563,65 +562,48 @@ fun fetchBoardedStudents(brokenBusNo: String, date_: String, callback: (List<Str
 }
 
 fun allocateStudentsToBuses(
-    boardedStudents: List<String>,
-    activeBuses: List<String>,
+    rescueStudents: List<String>,
+    seatAvailability: Map<String, Int>,
     date_: String,
     brokenBusNo: String
 ) {
     val db = Firebase.firestore
     val allocatedBuses = mutableMapOf<String, String>()
-    val seatAvailability = mutableMapOf<String, Int>()
 
-    // Fetch seat availability for each active bus
-    val tasks = activeBuses.map { busNo ->
-        db.collection("bus_status").document(busNo)
-            .get()
-            .continueWith { task ->
-                val busData = task.result?.get(date_) as? Map<*, *> ?: return@continueWith
-                val availableSeats = 20 - (busData["count"] as? Long ?: 0).toInt()
-                seatAvailability[busNo] = availableSeats
+    var studentIndex = 0
+    for ((busNo, seats) in seatAvailability) {
+        for (i in 0 until seats) {
+            if (studentIndex >= rescueStudents.size) {
+                break
             }
-    }
-
-    Tasks.whenAllComplete(tasks).addOnSuccessListener {
-        var studentIndex = 0
-        for ((busNo, seats) in seatAvailability) {
-            for (i in 0 until seats) {
-                if (studentIndex >= boardedStudents.size) {
-                    break
-                }
-                allocatedBuses[boardedStudents[studentIndex]] = busNo
-                studentIndex++
-            }
-        }
-
-        while (studentIndex < boardedStudents.size) {
-            allocatedBuses[boardedStudents[studentIndex]] = "NA"
+            allocatedBuses[rescueStudents[studentIndex]] = busNo
             studentIndex++
         }
-
-        // Fetch the bus status document for the broken bus
-        db.collection("bus_status").document(brokenBusNo)
-            .get()
-            .addOnSuccessListener { thisBus ->
-                val thisBusData = thisBus.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
-
-                // Create a nested structure to update only the required fields
-                val updateData = mapOf(
-                    date_ to mapOf(
-                        "allocated_buses" to allocatedBuses
-                    )
-                )
-
-                // Merge into existing data without overwriting the whole document
-                db.collection("bus_status").document(brokenBusNo)
-                    .set(updateData, SetOptions.merge())
-                    .addOnSuccessListener {
-                        Log.d("Firestore", "Successfully updated allocated_buses for $brokenBusNo under $date_")
-                    }
-                    .addOnFailureListener {
-                        Log.e("Firestore", "Failed to update allocated_buses for $brokenBusNo under $date_", it)
-                    }
-            }
     }
+
+    // Remaining students with no available seat
+    while (studentIndex < rescueStudents.size) {
+        allocatedBuses[rescueStudents[studentIndex]] = "NA"
+        studentIndex++
+    }
+
+    // Update the allocated buses in Firestore under the broken bus entry
+    db.collection("bus_status").document(brokenBusNo)
+        .get()
+        .addOnSuccessListener { thisBus ->
+            val thisBusData = thisBus.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
+            val updateData = mapOf(
+                date_ to mapOf(
+                    "allocated_buses" to allocatedBuses
+                )
+            )
+            db.collection("bus_status").document(brokenBusNo)
+                .set(updateData, SetOptions.merge())
+                .addOnSuccessListener {
+                    Log.d("Firestore", "Successfully updated allocated_buses for $brokenBusNo under $date_")
+                }
+                .addOnFailureListener {
+                    Log.e("Firestore", "Failed to update allocated_buses for $brokenBusNo under $date_", it)
+                }
+        }
 }

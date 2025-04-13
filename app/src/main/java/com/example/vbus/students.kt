@@ -59,7 +59,7 @@ val student_stops: Map<String, MutableMap<String, MutableList<String>>> = mapOf(
     "2" to mutableMapOf(
         "s1" to mutableListOf(
             "dhanushya.b2024@vitstudent.ac.in","surya.k2024@vitstudent.ac.in",
-            "fida.fahima2024@vitstudent.ac.in, bianca.joshini2024@vitstudent.ac.in",
+            "fida.fahima2024@vitstudent.ac.in", "bianca.joshini2024@vitstudent.ac.in",
             "kala.r2024@vitstudent.ac.in","aksa.biju2024@vitstudent.ac.in"),
         "s2" to mutableListOf(
             "st1","st2","st3", "st4","st5","st6","st7","st8","st9","st10","st11","st12","st13","st14"
