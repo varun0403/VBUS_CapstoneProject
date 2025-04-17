@@ -43,6 +43,10 @@ import com.google.android.gms.tasks.Tasks
 import com.google.firebase.database.*
 import com.google.firebase.firestore.GeoPoint
 import com.example.vbus.checkpointToBuses
+import com.example.vbus.notification.NotificationBody
+import com.example.vbus.notification.NotificationMessage
+import com.example.vbus.notification.NotificationWrapper
+import com.example.vbus.notification.sendingNotification
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
@@ -50,6 +54,7 @@ fun DriverMapScreen(navController: NavHostController, bus_no: String) {
     val context = LocalContext.current
     val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
     val db = Firebase.firestore
+    val fcmToken = "e0Zqi72kRHqoFsO2jox6GR:APA91bHmDCCt8xYcguqkYlvJd4nPzUE11UnW6yN3ktEbFbMWv1w6Xtdt7qYGoc9NmRGoPl2PK2IkwMSGcij1wOVpb0hySsfzaLJ_7tQtdfQmUjIAhjjhV7I"
     val geofenceCenters = remember { mutableStateListOf<LatLng>() }
     val checkPoints = remember { mutableStateListOf<LatLng>() }
     val geofenceRadius = 130.0
@@ -159,7 +164,19 @@ fun DriverMapScreen(navController: NavHostController, bus_no: String) {
                 )
                 Row {
                     Button(
-                        onClick = { alertNearbyBuses(bus_no) }
+                        onClick = {
+                            alertNearbyBuses(bus_no)
+                            val notificationBody = NotificationBody(
+                                title = "Authentication",
+                                body = "You have logged in successfully!"
+                            )
+                            val message = NotificationMessage(
+                                token = fcmToken,
+                                notification = notificationBody
+                            )
+                            val wrapper = NotificationWrapper(message = message)
+                            sendingNotification(wrapper, context)
+                        }
                     ) { Text("Report Breakdown") }
 
                     Button(
@@ -348,10 +365,8 @@ fun startLocationUpdates(
                                     }
                             }
                         }
-
                         previousStateMap[index] = isInside
                     }
-
 
                     checkPoints.forEachIndexed { index, point ->
                         val isInside = checkGeofence(latLng, point, geofenceRadius)
@@ -416,6 +431,7 @@ fun getCurrentDate(): String {
 fun alertNearbyBuses(brokenBusNo: String) {
     val db = Firebase.firestore
     val date_ = getCurrentDate()
+    val fcmToken = "e0Zqi72kRHqoFsO2jox6GR:APA91bHmDCCt8xYcguqkYlvJd4nPzUE11UnW6yN3ktEbFbMWv1w6Xtdt7qYGoc9NmRGoPl2PK2IkwMSGcij1wOVpb0hySsfzaLJ_7tQtdfQmUjIAhjjhV7I"
 
     // Step 0.0: Update isOperable to false for the broken bus
     db.collection("bus_status")
@@ -558,6 +574,7 @@ fun fetchBoardedStudents(brokenBusNo: String, date_: String, callback: (List<Str
         }
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
 fun allocateStudentsToBuses(
     rescueStudents: List<String>,
     seatAvailability: Map<String, Int>,
@@ -579,11 +596,23 @@ fun allocateStudentsToBuses(
     }
 
     // Remaining students with no available seat
-    while (studentIndex < rescueStudents.size) {
-        // needs to be set to second lvl of rescue
-        allocatedBuses[rescueStudents[studentIndex]] = "NA"
-        studentIndex++
+//    while (studentIndex < rescueStudents.size) {
+//        // needs to be set to second lvl of rescue
+//        allocatedBuses[rescueStudents[studentIndex]] = "NA"
+//        studentIndex++
+//    }
+
+    if (studentIndex < rescueStudents.size) {
+        val unallocatedStudents = rescueStudents.subList(studentIndex, rescueStudents.size)
+        val allocatedBusList = allocatedBuses.values.toList()
+
+        rescueLayer2(
+            unallocatedStudents = unallocatedStudents,
+            allocatedBuses = allocatedBusList,
+            brokenBusNo = brokenBusNo
+        )
     }
+
 
     // Update the allocated buses in Firestore under the broken bus entry
     db.collection("bus_status").document(brokenBusNo)
@@ -609,7 +638,6 @@ fun allocateStudentsToBuses(
 @RequiresApi(Build.VERSION_CODES.O)
 fun rescueLayer2(
     unallocatedStudents: List<String>,
-    brokenBusCheckpoints: List<String>,
     allocatedBuses: List<String>,
     brokenBusNo: String
 ) {
@@ -618,6 +646,15 @@ fun rescueLayer2(
     val layer2EligibleBuses = mutableMapOf<String, Int>()
     var completedCount = 0
     val totalToCheck: Int
+    var brokenBusCheckpoints = emptyList<String>()
+    val date_ = getCurrentDate()
+
+    db.collection("bus_status").document(brokenBusNo)
+        .get()
+        .addOnSuccessListener { busData ->
+            val brokenBusData = busData.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
+            brokenBusCheckpoints = brokenBusData["upcoming_checkpoints"] as? List<String> ?: emptyList()
+        }
 
     for (checkpoint in brokenBusCheckpoints) {
         val busesAtCheckpoint = checkpointToBuses[checkpoint] ?: continue
@@ -691,9 +728,30 @@ fun allocateFromLayer2(
     eligibleBuses: Map<String, Int>,
     brokenBusNo: String
 ) {
+
     val db = Firebase.firestore
     val allocatedBuses2 = mutableMapOf<String, String>()
     var studentIndex = 0
+    val database = FirebaseDatabase.getInstance("https://vbus-160e8-default-rtdb.asia-southeast1.firebasedatabase.app/")
+    val busRef = database.getReference("driverLocation").child(brokenBusNo)
+    var location = GeoPoint(0.0, 0.0)
+    busRef.addListenerForSingleValueEvent(object : ValueEventListener {
+        override fun onDataChange(snapshot: DataSnapshot) {
+            val lat = snapshot.child("latitude").getValue(Double::class.java)
+            val lng = snapshot.child("longitude").getValue(Double::class.java)
+
+            if (lat != null && lng != null) {
+                location = GeoPoint(lat,lng)
+                Log.d("DriverLocation", "Bus $brokenBusNo is at: $location")
+            } else {
+                Log.e("DriverLocation", "Failed to retrieve location for $brokenBusNo")
+            }
+        }
+
+        override fun onCancelled(error: DatabaseError) {
+            Log.e("DriverLocation", "Database error: ${error.message}")
+        }
+    })
 
     for ((busNo, seats) in eligibleBuses) {
         for (i in 0 until seats) {
@@ -710,12 +768,17 @@ fun allocateFromLayer2(
 
     val updateData = mapOf(
         getCurrentDate() to mapOf(
-            "layer2_allocated_buses" to allocatedBuses2
+            "layer2_allocated_buses" to allocatedBuses2,
+            "rescue_location" to location,
+            "rescue_bus" to brokenBusNo,
         )
     )
 
     db.collection("bus_status").document(brokenBusNo)
-        .set(updateData, SetOptions.merge())
+        .set(
+            updateData,
+            SetOptions.merge()
+        )
         .addOnSuccessListener {
             Log.d("Firestore", "Layer 2 allocations updated for $brokenBusNo.")
         }
