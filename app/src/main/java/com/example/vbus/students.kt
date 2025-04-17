@@ -75,3 +75,15 @@ val student_stops: Map<String, MutableMap<String, MutableList<String>>> = mapOf(
         )
     )
 )
+
+val checkpointToBuses: Map<String, MutableSet<String>> = mapOf(
+    "A" to mutableSetOf("1","2","3","7","8"),
+    "B" to mutableSetOf("1","2","3","4","5","6"),
+    "C" to mutableSetOf("1","2","3","4","5","6"),
+    "D" to mutableSetOf("12","4","5","6"),
+    "E" to mutableSetOf("1","2","3","4","5","6","7","8"),
+    "F" to mutableSetOf("1","2","3","4","5","6","7","8"),
+    "G" to mutableSetOf("4","5","6"),
+    "H" to mutableSetOf("7","8"),
+    "I" to mutableSetOf("7","8"),
+)

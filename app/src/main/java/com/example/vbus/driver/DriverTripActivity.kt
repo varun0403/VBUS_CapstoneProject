@@ -38,9 +38,11 @@ import androidx.navigation.NavController
 import com.example.vbus.routes
 import com.example.vbus.studentBoardingStatus
 import com.example.vbus.student_stops
+import com.example.vbus.bus_checkpoints
 import com.google.android.gms.tasks.Tasks
 import com.google.firebase.database.*
 import com.google.firebase.firestore.GeoPoint
+import com.example.vbus.checkpointToBuses
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
@@ -250,6 +252,7 @@ fun startLocationUpdates(
         .addOnSuccessListener { busDetails ->
             val checkpointsMap = busDetails.get("check_points") as? Map<String, Any> ?: emptyMap()
             val checkpointKeys = checkpointsMap.keys.toList()
+            val route_id = busDetails.getString("route_id") ?: ""
             val stops = busDetails.get("stops") as? Map<String, Any> ?: emptyMap()
             val stopsKeys = stops.keys.toList()
             Log.d("Check Point Keys: ", checkpointKeys.toString())
@@ -260,7 +263,7 @@ fun startLocationUpdates(
                     date_ to mapOf(
                         "count" to 0,
                         "bus_operable" to true,
-                        "upcoming_checkpoints" to checkpointKeys,
+                        "upcoming_checkpoints" to bus_checkpoints[route_id],
                         "rescue_request" to false,
                         "upcoming_stops" to stopsKeys,
                         "boarding_status" to studentBoardingStatus[bus_no])),
@@ -355,25 +358,18 @@ fun startLocationUpdates(
                         val previousState = previousStateMap[geofenceCenters.size + index] ?: false
 
                         if (!previousState && isInside) {
-                            Log.d("CheckpointEvent", "Bus $bus_no entered checkpoint ${index + 1}.")
-                            val checkpointValue = "c${index + 1}" // Example: "c1", "c2"
+                            Log.d("CheckpointEvent", "Bus $bus_no entered a checkpoint")
                             val busRef = db.collection("bus_status").document(bus_no)
 
                             busRef.get().addOnSuccessListener { document ->
                                 val existingData = document.get(date_) as? MutableMap<String, Any> ?: mutableMapOf()
-                                val checkpoints = (existingData["checkpoints"] as? MutableList<String>) ?: mutableListOf()
-
-                                if (!checkpoints.contains(checkpointValue)) {
-                                    checkpoints.add(checkpointValue)
-                                    existingData["checkpoints"] = checkpoints
-                                    // ✅ Remove this checkpoint from upcoming_checkpoints
-                                    val upcomingList = (existingData["upcoming_checkpoints"] as? MutableList<String>) ?: mutableListOf()
-                                    upcomingList.remove(checkpointValue)
-                                    existingData["upcoming_checkpoints"] = upcomingList
-
-
-                                    busRef.update(date_, existingData)
+                                val upcomingCheckpoints = (existingData["upcoming_checkpoints"] as? MutableList<String>) ?: mutableListOf()
+                                val checkPointToRemove = upcomingCheckpoints.firstOrNull()
+                                if (checkPointToRemove != null) {
+                                    upcomingCheckpoints.remove(checkPointToRemove)
                                 }
+                                existingData["upcoming_checkpoints"] = upcomingCheckpoints
+                                busRef.update(date_, existingData)
                             }
                         }
 
@@ -458,6 +454,7 @@ fun alertNearbyBuses(brokenBusNo: String) {
                         .addOnSuccessListener { busData ->
                             val brokenBusData = busData.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
                             val upcomingCheckpointsBrokenBus = brokenBusData["upcoming_checkpoints"] as? List<String> ?: emptyList()
+                            val upcomingCheckpointBrokenBus = upcomingCheckpointsBrokenBus.firstOrNull()
                             Log.d("Upcoming Checkpoints", upcomingCheckpointsBrokenBus.toString())
                             val validBusesForRescue = mutableMapOf<String,Int>()
                             for (activeBusNo in activeBusesInRoute) {
@@ -469,15 +466,15 @@ fun alertNearbyBuses(brokenBusNo: String) {
                                     .addOnSuccessListener { thisBus ->
                                         val thisBusData = thisBus.get(date_) as? Map<*, *> ?: return@addOnSuccessListener
                                         val upcomingCheckpointsActiveBus = thisBusData["upcoming_checkpoints"] as? List<String> ?: emptyList()
-
-                                        if (upcomingCheckpointsActiveBus.intersect(upcomingCheckpointsBrokenBus).isNotEmpty()) {
+                                        val rescue_req = thisBusData["rescue_request"] as? Boolean ?: false
+                                        if (upcomingCheckpointsActiveBus.contains(upcomingCheckpointBrokenBus) && rescue_req) {
                                             // Step 4.1 logic: check how many pending stops left for the active bus
                                             val upcomingStops = thisBusData["upcoming_stops"] as? List<String> ?: emptyList()
                                             val num_of_upcomingStops = upcomingStops.size
                                             if (num_of_upcomingStops == 0){
                                                 val available_seats = 20 - (thisBusData["count"] as? Long ?: 0).toInt()
                                                 if(available_seats > 0){
-                                                    validBusesForRescue.put(activeBusNo, available_seats)
+                                                    validBusesForRescue[activeBusNo] = available_seats
                                                     Log.d("Alert", "Notify bus $activeBusNo about the broken bus $brokenBusNo. Available seats $available_seats")
                                                 }
                                             }
@@ -494,7 +491,7 @@ fun alertNearbyBuses(brokenBusNo: String) {
                                                 val availableSeats = 20 - currentCount - pendingBoardingCount
                                                 Log.d("Seat Calculation", "Bus $activeBusNo has $availableSeats available after accounting for $pendingBoardingCount pending boarders.")
                                                 if (availableSeats > 0) {
-                                                    validBusesForRescue.put(activeBusNo, availableSeats)
+                                                    validBusesForRescue[activeBusNo] = availableSeats
                                                     Log.d("Alert", "Notify bus $activeBusNo about the broken bus $brokenBusNo. Available seats $availableSeats")
                                                 }
                                             }
@@ -569,7 +566,7 @@ fun allocateStudentsToBuses(
 ) {
     val db = Firebase.firestore
     val allocatedBuses = mutableMapOf<String, String>()
-
+    val rescue_buses = seatAvailability.keys.toList()
     var studentIndex = 0
     for ((busNo, seats) in seatAvailability) {
         for (i in 0 until seats) {
@@ -583,6 +580,7 @@ fun allocateStudentsToBuses(
 
     // Remaining students with no available seat
     while (studentIndex < rescueStudents.size) {
+        // needs to be set to second lvl of rescue
         allocatedBuses[rescueStudents[studentIndex]] = "NA"
         studentIndex++
     }
@@ -607,3 +605,123 @@ fun allocateStudentsToBuses(
                 }
         }
 }
+
+@RequiresApi(Build.VERSION_CODES.O)
+fun rescueLayer2(
+    unallocatedStudents: List<String>,
+    brokenBusCheckpoints: List<String>,
+    allocatedBuses: List<String>,
+    brokenBusNo: String
+) {
+    val db = Firebase.firestore
+    val layer2CandidateBuses = mutableSetOf<String>()
+    val layer2EligibleBuses = mutableMapOf<String, Int>()
+    var completedCount = 0
+    val totalToCheck: Int
+
+    for (checkpoint in brokenBusCheckpoints) {
+        val busesAtCheckpoint = checkpointToBuses[checkpoint] ?: continue
+        for (bus in busesAtCheckpoint) {
+            if (bus != brokenBusNo && bus !in allocatedBuses) {
+                layer2CandidateBuses.add(bus)
+            }
+        }
+    }
+
+    totalToCheck = layer2CandidateBuses.size
+
+    if (totalToCheck == 0) {
+        Log.d("Layer2", "No eligible buses found at common checkpoints.")
+        return
+    }
+
+    for (bus in layer2CandidateBuses) {
+        db.collection("bus_status").document(bus).get()
+            .addOnSuccessListener { doc ->
+                val busData = doc.get(getCurrentDate()) as? Map<*, *> ?: return@addOnSuccessListener
+                val rescue_req = busData["rescue_request"] as? Boolean ?: return@addOnSuccessListener
+
+                if (!rescue_req) {
+                    val activeBusCheckPoints = busData["upcoming_checkpoints"] as? List<*> ?: return@addOnSuccessListener
+                    val brokenBusUpcomingCheckpoint = brokenBusCheckpoints.firstOrNull()
+                    if (activeBusCheckPoints.contains(brokenBusUpcomingCheckpoint)) {
+                        val upcomingStops = busData["upcoming_stops"] as? List<String> ?: emptyList()
+                        val currentCount = (busData["count"] as? Long ?: 0).toInt()
+
+                        val availableSeats = if (upcomingStops.isEmpty()) {
+                            20 - currentCount
+                        } else {
+                            var pendingBoardingCount = 0
+                            val stopWiseStudents = student_stops[bus] ?: mutableMapOf()
+                            for (stop in upcomingStops) {
+                                val studentsAtStop = stopWiseStudents[stop] ?: mutableListOf()
+                                pendingBoardingCount += studentsAtStop.size
+                            }
+                            20 - currentCount - pendingBoardingCount
+                        }
+
+                        if (availableSeats > 0) {
+                            layer2EligibleBuses[bus] = availableSeats
+                            Log.d("Alert", "Notify bus $bus about broken bus $brokenBusNo. Available seats: $availableSeats")
+                        }
+                    }
+                }
+                else {
+                    Log.d("Status", "Bus $bus is already on another rescue.")
+                }
+
+                completedCount++
+                if (completedCount == totalToCheck) {
+                    allocateFromLayer2(unallocatedStudents, layer2EligibleBuses, brokenBusNo)
+                }
+            }
+            .addOnFailureListener {
+                completedCount++
+                if (completedCount == totalToCheck) {
+                    allocateFromLayer2(unallocatedStudents, layer2EligibleBuses, brokenBusNo)
+                }
+            }
+    }
+}
+
+
+@RequiresApi(Build.VERSION_CODES.O)
+fun allocateFromLayer2(
+    unallocatedStudents: List<String>,
+    eligibleBuses: Map<String, Int>,
+    brokenBusNo: String
+) {
+    val db = Firebase.firestore
+    val allocatedBuses2 = mutableMapOf<String, String>()
+    var studentIndex = 0
+
+    for ((busNo, seats) in eligibleBuses) {
+        for (i in 0 until seats) {
+            if (studentIndex >= unallocatedStudents.size) break
+            allocatedBuses2[unallocatedStudents[studentIndex]] = busNo
+            studentIndex++
+        }
+    }
+
+    while (studentIndex < unallocatedStudents.size) {
+        allocatedBuses2[unallocatedStudents[studentIndex]] = "NA"
+        studentIndex++
+    }
+
+    val updateData = mapOf(
+        getCurrentDate() to mapOf(
+            "layer2_allocated_buses" to allocatedBuses2
+        )
+    )
+
+    db.collection("bus_status").document(brokenBusNo)
+        .set(updateData, SetOptions.merge())
+        .addOnSuccessListener {
+            Log.d("Firestore", "Layer 2 allocations updated for $brokenBusNo.")
+        }
+        .addOnFailureListener {
+            Log.e("Firestore", "Failed to update layer 2 allocations for $brokenBusNo", it)
+        }
+}
+
+

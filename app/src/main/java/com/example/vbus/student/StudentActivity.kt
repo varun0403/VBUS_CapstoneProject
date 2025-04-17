@@ -118,10 +118,10 @@ fun StudentHomeScreen(navController: NavController, email: String) {
 //            }
 //    }
 
-    LaunchedEffect(Unit){
+    LaunchedEffect(key1 = true){
         val notificationBody = NotificationBody(
-            title = "Bus 1",
-            body = "Bus has reached stop 1. Enroute to stop 2"
+            title = "Authentication",
+            body = "You have logged in successfully!"
         )
         Log.d("FCM TOKEN",fcmToken)
         val message = NotificationMessage(
